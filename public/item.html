@@ -258,7 +258,7 @@
       
       <div class="row" style="margin-bottom:20px">
         ${isStaff ? `
-          <button onclick="setStatus('SHIPPED')">🚚 Giao hàng</button>
+          <button onclick="setStatus('${it.status === 'SHIPPED' ? 'CREATED' : 'SHIPPED'}')">${it.status === 'SHIPPED' ? '↩️ Hủy Giao hàng (Về Created)' : '🚚 Giao hàng'}</button>
           <button onclick="setStatus('RETURN')" style="background:#fff7ed; color:#c2410c">↩️ Return</button>
           <button onclick="setInventory('IN_STOCK')" style="background:#eff6ff; color:#1d4ed8">📦 Vào kho</button>
         ` : ""}
