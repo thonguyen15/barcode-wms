@@ -286,6 +286,17 @@
         <div style="font-family:monospace; margin-top:4px; font-size:13px; color:var(--muted)">SN: ${esc(it.serial_clean || it.serial_raw || "-")}</div>
       </div>
 
+      <div class="detail-grid" style="margin-top:16px">
+        <div class="detail-item"><div class="detail-label">Pin (Battery)</div><div class="detail-value">${esc(it.battery || "-")}</div></div>
+        <div class="detail-item"><div class="detail-label">Bảo hành (Coverage)</div><div class="detail-value">${esc(it.coverage || "-")}</div></div>
+        <div class="detail-item"><div class="detail-label">Ghi chú (Note)</div><div class="detail-value" style="white-space: pre-wrap;">${esc(it.note || "-")}</div></div>
+      </div>
+
+      <div class="detail-item" style="margin-top:16px">
+        <div class="detail-label">Tình trạng (Condition)</div>
+        <div class="detail-value" style="font-weight: normal; font-size: 14px; white-space: pre-wrap;">${esc(it.condition || "-")}</div>
+      </div>
+
       <div id="photoBox" style="margin-top:24px"></div>
     </div>
   `;
