@@ -1,5 +1,6 @@
 <!doctype html>
 <html>
+
 <head>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta charset="utf-8" />
@@ -8,35 +9,84 @@
   <script src="https://unpkg.com/html5-qrcode"></script>
   <style>
     /* Mode-specific active states for Scan Page */
-    #modeShip.active { background: #16a34a !important; box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3); }
-    #modeReturn.active { background: #ea580c !important; box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3); }
-    #modeInv.active { background: #2563eb !important; box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3); }
-    
-    #scanOk { 
-      opacity: 0; 
-      pointer-events: none; 
+    #modeShip.active {
+      background: #16a34a !important;
+      box-shadow: 0 4px 12px rgba(22, 163, 74, 0.3);
+    }
+
+    #modeReturn.active {
+      background: #ea580c !important;
+      box-shadow: 0 4px 12px rgba(234, 88, 12, 0.3);
+    }
+
+    #modeInv.active {
+      background: #2563eb !important;
+      box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+    }
+
+    #scanOk {
+      opacity: 0;
+      pointer-events: none;
       transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
       transform: translate(-50%, -50%) scale(0.5);
     }
-    #scanOk.show { 
-      opacity: 1; 
+
+    #scanOk.show {
+      opacity: 1;
       transform: translate(-50%, -50%) scale(1);
     }
 
     /* Compact UI for Mobile */
     @media (max-width: 600px) {
-      body { padding: 8px; padding-top: 54px; }
-      .topbar { padding: 4px 10px; height: 50px; }
-      .logout-btn { padding: 4px 8px; font-size: 11px; }
-      .nav a { padding: 4px 8px; font-size: 12px; }
-      .card { margin: 6px 0; padding: 10px; }
-      .scan-actions button { padding: 8px 4px; font-size: 12px; }
-      #modeHint, #scanSuccess, #scanErr { margin-top: 4px; font-size: 11px; }
-      #itemBox .card { padding: 6px 10px; border-radius: 10px; }
-      #reader { min-height: 280px; }
+      body {
+        padding: 8px;
+        padding-top: 54px;
+      }
+
+      .topbar {
+        padding: 4px 10px;
+        height: 50px;
+      }
+
+      .logout-btn {
+        padding: 4px 8px;
+        font-size: 11px;
+      }
+
+      .nav a {
+        padding: 4px 8px;
+        font-size: 12px;
+      }
+
+      .card {
+        margin: 6px 0;
+        padding: 10px;
+      }
+
+      .scan-actions button {
+        padding: 8px 4px;
+        font-size: 12px;
+      }
+
+      #modeHint,
+      #scanSuccess,
+      #scanErr {
+        margin-top: 4px;
+        font-size: 11px;
+      }
+
+      #itemBox .card {
+        padding: 6px 10px;
+        border-radius: 10px;
+      }
+
+      #reader {
+        min-height: 280px;
+      }
     }
   </style>
 </head>
+
 <body>
   <div class="no-print topbar">
     <div class="nav">
@@ -65,175 +115,178 @@
   <div class="card" style="padding:10px; position:relative">
     <div id="scannerLine" class="scanner-overlay"></div>
     <div id="reader" class="qr-reader"></div>
-    <div id="scanOk" class="scan-ok" style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); z-index:20; background:rgba(255,255,255,0.9); padding:20px; border-radius:100px; box-shadow:var(--shadow-lg); font-size:40px; border:4px solid #16a34a">✅</div>
-    <div id="hint" style="text-align:center; margin-top:12px; color:var(--muted); font-size:14px">Đưa QR vào giữa khung hình</div>
+    <div id="scanOk" class="scan-ok"
+      style="position:absolute; top:50%; left:50%; transform:translate(-50%, -50%); z-index:20; background:rgba(255,255,255,0.9); padding:20px; border-radius:100px; box-shadow:var(--shadow-lg); font-size:40px; border:4px solid #16a34a">
+      ✅</div>
+    <div id="hint" style="text-align:center; margin-top:12px; color:var(--muted); font-size:14px">Đưa QR vào giữa khung
+      hình</div>
   </div>
 
   <div id="invBox" style="display:none; margin-top:20px"></div>
 
-<script>
-async function logout(){ await fetch("/api/logout",{method:"POST"}); location.href="/login.html"; }
-async function checkAuth() {
-  const r = await fetch("/api/me"); const j = await r.json();
-  if (j.role === 'admin' && j.user === 'tho') {
-    document.getElementById("navSettings").style.display = "inline-block";
-  } else if (j.role === 'entry') {
-    document.getElementById("navCreate").style.display = "none";
-    document.getElementById("navScan").style.display = "none";
-    document.getElementById("navInventory").style.display = "none";
-    location.href = "/list.html";
-  }
-}
-checkAuth();
-const scanner = new Html5Qrcode("reader");
-function esc(s){ return (s??"").replace(/[&<>"']/g, m=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[m])); }
-
-let MODE = null;
-let html5QrCode = null;
-let isScanning = false;
-let lastScanAt = 0;
-let lastScannedToken = null;
-let lastScannedAtToken = 0;
-
-function beep(){
-  try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
-    const play = (freq, time, dur) => {
-      const o = ctx.createOscillator(); const g = ctx.createGain();
-      o.type = "sine"; o.frequency.value = freq; g.gain.value = 0.05;
-      o.connect(g); g.connect(ctx.destination);
-      o.start(time); o.stop(time + dur);
-    };
-    play(1400, ctx.currentTime, 0.08); // Bíp
-    play(1600, ctx.currentTime + 0.12, 0.08); // Bíp bíp
-    setTimeout(() => ctx.close(), 500);
-  } catch(e) {}
-}
-
-function flashSuccess(){
-  beep();
-  if (navigator.vibrate) navigator.vibrate([40]);
-  const ok = document.getElementById("scanOk");
-  ok.classList.add("show");
-  setTimeout(()=> ok.classList.remove("show"), 600);
-}
-
-function flashError(){
-  if (navigator.vibrate) navigator.vibrate([150]);
-  document.body.style.background = "#fee2e2";
-  setTimeout(()=> document.body.style.background = "var(--bg)", 300);
-}
-
-async function setMode(m){
-  if (MODE === m){
-    MODE = null;
-    document.getElementById("scannerLine").style.display = "none";
-    await stopScan();
-    ["modeShip","modeReturn","modeInv"].forEach(id=>document.getElementById(id).classList.remove("active"));
-    document.getElementById("modeHint").textContent = "";
-    return;
-  }
-  MODE = m;
-  ["modeShip","modeReturn","modeInv"].forEach(id=>document.getElementById(id).classList.toggle("active", id.includes(m.charAt(0).toUpperCase() + m.slice(1).toLowerCase())));
-  
-  const hints = {
-    SHIP: "Chế độ Xuất hàng: Tự động chuyển trạng thái SHIPPED.",
-    RETURN: "Return mode: Auto-update status to RETURN.",
-    INVENTORY: "Chế độ Kiểm hàng: Lưu danh sách kiểm kê trong ngày."
-  };
-  document.getElementById("modeHint").textContent = hints[m];
-  document.getElementById("scannerLine").style.display = "block";
-  
-  if(MODE === "INVENTORY") { renderInvTable(); document.getElementById("invBox").style.display = "block"; }
-  else document.getElementById("invBox").style.display = "none";
-
-  await startScan();
-}
-
-async function startScan(){
-  if(!html5QrCode) html5QrCode = new Html5Qrcode("reader");
-  if(isScanning) return;
-  
-  isScanning = true;
-  await html5QrCode.start(
-    { facingMode: "environment" }, 
-    {
-      fps: 20, 
-      qrbox: (vw, vh) => { const s = Math.floor(Math.min(vw, vh) * 0.75); return { width: s, height: s }; }
-    }, 
-    onScanSuccess
-  ).catch(err => {
-    isScanning = false;
-    console.error("Camera error:", err);
-    alert("Không tìm thấy camera sau hoặc lỗi quyền truy cập.");
-  });
-}
-
-async function onScanSuccess(decodedText) {
-  const now = Date.now();
-  if(now - lastScanAt < 1000) return;
-  
-  let token = decodedText;
-  try { const u = new URL(decodedText); const t = new URLSearchParams(u.search).get("token"); if(t) token = t; } catch{}
-  
-  if (token === lastScannedToken && (now - lastScannedAtToken < 2500)) return;
-  lastScannedToken = token; lastScannedAtToken = now;
-  lastScanAt = now;
-
-  const r = await fetch(`/api/scan/${encodeURIComponent(token)}`);
-  const j = await r.json();
-  if(!r.ok){ flashError(); document.getElementById("scanErr").textContent = j.error || "Không tìm thấy mã"; return; }
-  
-  document.getElementById("scanErr").textContent = "";
-  let it = j.item;
-
-  if (MODE === "INVENTORY") {
-    const addRes = await fetch("/api/inventory/add", { 
-      method: "POST", 
-      headers: { "Content-Type": "application/json" }, 
-      body: JSON.stringify({ token }) 
-    });
-    if (addRes.ok) { 
-      it.inventory_status = "IN_STOCK"; // Cập nhật local để hiển thị ngay
-      renderItem(it);
-      flashSuccess(); 
-      renderInvTable(); 
-      const sEl = document.getElementById("scanSuccess");
-      sEl.textContent = `✅ Đã kiểm kê: ${it.name}`;
-      sEl.style.display = "block";
-      setTimeout(() => sEl.style.display = "none", 3000);
+  <script>
+    async function logout() { await fetch("/api/logout", { method: "POST" }); location.href = "/login.html"; }
+    async function checkAuth() {
+      const r = await fetch("/api/me"); const j = await r.json();
+      if (j.role === 'admin' && j.user === 'tho') {
+        document.getElementById("navSettings").style.display = "inline-block";
+      } else if (j.role === 'entry') {
+        document.getElementById("navCreate").style.display = "none";
+        document.getElementById("navScan").style.display = "none";
+        document.getElementById("navInventory").style.display = "none";
+        location.href = "/list.html";
+      }
     }
-    else { flashError(); document.getElementById("scanErr").textContent = "Lỗi thêm kiểm kê"; }
-  } else {
-    const statusMap = { SHIP: "SHIPPED", RETURN: "RETURN" };
-    const toStatus = statusMap[MODE];
-    const updateRes = await fetch(`/api/items/${it.id}/status`, { 
-      method: "POST", 
-      headers: { "Content-Type": "application/json" }, 
-      body: JSON.stringify({ to_status: toStatus }) 
-    });
-    
-    if (updateRes.ok) {
-      it.status = toStatus; // Cập nhật local để hiển thị ngay
-      renderItem(it);
-      flashSuccess();
-      const sEl = document.getElementById("scanSuccess");
-      sEl.textContent = `✅ Đã chuyển thành ${toStatus}`;
-      sEl.style.display = "block";
-      setTimeout(() => sEl.style.display = "none", 3000);
-    } else {
-      flashError();
-      document.getElementById("scanErr").textContent = "Lỗi cập nhật trạng thái";
+    checkAuth();
+    const scanner = new Html5Qrcode("reader");
+    function esc(s) { return (s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m])); }
+
+    let MODE = null;
+    let html5QrCode = null;
+    let isScanning = false;
+    let lastScanAt = 0;
+    let lastScannedToken = null;
+    let lastScannedAtToken = 0;
+
+    function beep() {
+      try {
+        const ctx = new (window.AudioContext || window.webkitAudioContext)();
+        const play = (freq, time, dur) => {
+          const o = ctx.createOscillator(); const g = ctx.createGain();
+          o.type = "sine"; o.frequency.value = freq; g.gain.value = 0.05;
+          o.connect(g); g.connect(ctx.destination);
+          o.start(time); o.stop(time + dur);
+        };
+        play(1400, ctx.currentTime, 0.08); // Bíp
+        play(1600, ctx.currentTime + 0.12, 0.08); // Bíp bíp
+        setTimeout(() => ctx.close(), 500);
+      } catch (e) { }
     }
-  }
-}
 
-async function stopScan(){
-  if(html5QrCode && isScanning) { await html5QrCode.stop(); isScanning = false; }
-}
+    function flashSuccess() {
+      beep();
+      if (navigator.vibrate) navigator.vibrate([40]);
+      const ok = document.getElementById("scanOk");
+      ok.classList.add("show");
+      setTimeout(() => ok.classList.remove("show"), 600);
+    }
 
-function renderItem(it) {
-  document.getElementById("itemBox").innerHTML = `
+    function flashError() {
+      if (navigator.vibrate) navigator.vibrate([150]);
+      document.body.style.background = "#fee2e2";
+      setTimeout(() => document.body.style.background = "var(--bg)", 300);
+    }
+
+    async function setMode(m) {
+      if (MODE === m) {
+        MODE = null;
+        document.getElementById("scannerLine").style.display = "none";
+        await stopScan();
+        ["modeShip", "modeReturn", "modeInv"].forEach(id => document.getElementById(id).classList.remove("active"));
+        document.getElementById("modeHint").textContent = "";
+        return;
+      }
+      MODE = m;
+      ["modeShip", "modeReturn", "modeInv"].forEach(id => document.getElementById(id).classList.toggle("active", id.includes(m.charAt(0).toUpperCase() + m.slice(1).toLowerCase())));
+
+      const hints = {
+        SHIP: "Chế độ Xuất hàng: Tự động chuyển trạng thái SHIPPED.",
+        RETURN: "Return mode: Auto-update status to RETURN.",
+        INVENTORY: "Chế độ Kiểm hàng: Lưu danh sách kiểm kê trong ngày."
+      };
+      document.getElementById("modeHint").textContent = hints[m];
+      document.getElementById("scannerLine").style.display = "block";
+
+      if (MODE === "INVENTORY") { renderInvTable(); document.getElementById("invBox").style.display = "block"; }
+      else document.getElementById("invBox").style.display = "none";
+
+      await startScan();
+    }
+
+    async function startScan() {
+      if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+      if (isScanning) return;
+
+      isScanning = true;
+      await html5QrCode.start(
+        { facingMode: "environment" },
+        {
+          fps: 20,
+          qrbox: (vw, vh) => { const s = Math.floor(Math.min(vw, vh) * 0.75); return { width: s, height: s }; }
+        },
+        onScanSuccess
+      ).catch(err => {
+        isScanning = false;
+        console.error("Camera error:", err);
+        alert("Không tìm thấy camera sau hoặc lỗi quyền truy cập.");
+      });
+    }
+
+    async function onScanSuccess(decodedText) {
+      const now = Date.now();
+      if (now - lastScanAt < 1000) return;
+
+      let token = decodedText;
+      try { const u = new URL(decodedText); const t = new URLSearchParams(u.search).get("token"); if (t) token = t; } catch { }
+
+      if (token === lastScannedToken && (now - lastScannedAtToken < 2500)) return;
+      lastScannedToken = token; lastScannedAtToken = now;
+      lastScanAt = now;
+
+      const r = await fetch(`/api/scan/${encodeURIComponent(token)}`);
+      const j = await r.json();
+      if (!r.ok) { flashError(); document.getElementById("scanErr").textContent = j.error || "Không tìm thấy mã"; return; }
+
+      document.getElementById("scanErr").textContent = "";
+      let it = j.item;
+
+      if (MODE === "INVENTORY") {
+        const addRes = await fetch("/api/inventory/add", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ token })
+        });
+        if (addRes.ok) {
+          it.inventory_status = "IN_STOCK"; // Cập nhật local để hiển thị ngay
+          renderItem(it);
+          flashSuccess();
+          renderInvTable();
+          const sEl = document.getElementById("scanSuccess");
+          sEl.textContent = `✅ Đã kiểm kê: ${it.name}`;
+          sEl.style.display = "block";
+          setTimeout(() => sEl.style.display = "none", 3000);
+        }
+        else { flashError(); document.getElementById("scanErr").textContent = "Lỗi thêm kiểm kê"; }
+      } else {
+        const statusMap = { SHIP: "SHIPPED", RETURN: "RETURN" };
+        const toStatus = statusMap[MODE];
+        const updateRes = await fetch(`/api/items/${it.id}/status`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ to_status: toStatus })
+        });
+
+        if (updateRes.ok) {
+          it.status = toStatus; // Cập nhật local để hiển thị ngay
+          renderItem(it);
+          flashSuccess();
+          const sEl = document.getElementById("scanSuccess");
+          sEl.textContent = `✅ Đã chuyển thành ${toStatus}`;
+          sEl.style.display = "block";
+          setTimeout(() => sEl.style.display = "none", 3000);
+        } else {
+          flashError();
+          document.getElementById("scanErr").textContent = "Lỗi cập nhật trạng thái";
+        }
+      }
+    }
+
+    async function stopScan() {
+      if (html5QrCode && isScanning) { await html5QrCode.stop(); isScanning = false; }
+    }
+
+    function renderItem(it) {
+      document.getElementById("itemBox").innerHTML = `
     <div class="card" style="border-left:4px solid var(--primary); margin-bottom:0">
       <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px">
         <div style="flex:1">
@@ -247,21 +300,21 @@ function renderItem(it) {
       </div>
     </div>
   `;
-}
+    }
 
-async function renderInvTable(){
-  const r = await fetch("/api/inventory/today"); const j = await r.json();
-  const rows = j.rows || [];
-  
-  // Tính toán thống kê
-  const stats = {};
-  rows.forEach(row => {
-    const cat = row.category || 'khác';
-    stats[cat] = (stats[cat] || 0) + 1;
-  });
-  const sortedStats = Object.entries(stats).sort((a,b) => b[1] - a[1]);
+    async function renderInvTable() {
+      const r = await fetch("/api/inventory/today"); const j = await r.json();
+      const rows = j.rows || [];
 
-  document.getElementById("invBox").innerHTML = `
+      // Tính toán thống kê
+      const stats = {};
+      rows.forEach(row => {
+        const cat = row.category || 'khác';
+        stats[cat] = (stats[cat] || 0) + 1;
+      });
+      const sortedStats = Object.entries(stats).sort((a, b) => b[1] - a[1]);
+
+      document.getElementById("invBox").innerHTML = `
     <div class="card">
       <div class="row" style="justify-content:space-between; margin-bottom:12px; align-items:flex-start">
         <div>
@@ -287,7 +340,7 @@ async function renderInvTable(){
         <table cellpadding="10">
           <thead><tr><th>Sản phẩm</th><th>Serial</th><th class="hide-mobile">Mã vận đơn</th><th class="hide-mobile">Loại</th></tr></thead>
           <tbody>
-            ${rows.map(r=>`<tr>
+            ${rows.map(r => `<tr>
               <td style="font-weight:600">${esc(r.name)}</td>
               <td style="font-family:monospace; font-size:13px">${esc(r.serial)}</td>
               <td class="hide-mobile">${esc(r.mvd)}</td>
@@ -298,33 +351,34 @@ async function renderInvTable(){
       </div>
     </div>
   `;
-}
+    }
 
-async function resetInventory() {
-  if (!confirm("⚠️ CẢNH BÁO: Hành động này sẽ đặt LẠI TOÀN BỘ trạng thái kiểm kho của tất cả sản phẩm về 'UNKNOWN'. Bạn có chắc chắn muốn thực hiện?")) return;
-  
-  const r = await fetch("/api/inventory/reset", { method: "POST" });
-  if (r.ok) {
-    alert("Đã reset trạng thái kiểm kho thành công.");
-    location.reload();
-  } else {
-    alert("Có lỗi xảy ra khi reset.");
-  }
-}
+    async function resetInventory() {
+      if (!confirm("⚠️ CẢNH BÁO: Hành động này sẽ đặt LẠI TOÀN BỘ trạng thái kiểm kho của tất cả sản phẩm về 'UNKNOWN'. Bạn có chắc chắn muốn thực hiện?")) return;
 
-async function downloadInvCsv(){
-  if(!confirm("Xuất CSV Audit và làm sạch bảng kiểm kê hôm nay (di chuyển vào Lịch sử)?")) return;
-  const r = await fetch("/api/inventory/export", { method:"POST" });
-  const j = await r.json();
-  if(j.url) { 
-    window.open(j.url, "_blank"); 
-    renderInvTable(); 
-  }
-}
-async function checkInventoryToday(){
-  if(MODE === "INVENTORY") renderInvTable();
-}
-setInterval(checkInventoryToday, 60000); // Tự động refresh nhẹ mỗi phút
-</script>
+      const r = await fetch("/api/inventory/reset", { method: "POST" });
+      if (r.ok) {
+        alert("Đã reset trạng thái kiểm kho thành công.");
+        location.reload();
+      } else {
+        alert("Có lỗi xảy ra khi reset.");
+      }
+    }
+
+    async function downloadInvCsv() {
+      if (!confirm("Xuất CSV Audit và làm sạch bảng kiểm kê hôm nay (di chuyển vào Lịch sử)?")) return;
+      const r = await fetch("/api/inventory/export", { method: "POST" });
+      const j = await r.json();
+      if (j.url) {
+        window.open(j.url, "_blank");
+        renderInvTable();
+      }
+    }
+    async function checkInventoryToday() {
+      if (MODE === "INVENTORY") renderInvTable();
+    }
+    setInterval(checkInventoryToday, 60000); // Tự động refresh nhẹ mỗi phút
+  </script>
 </body>
+
 </html>

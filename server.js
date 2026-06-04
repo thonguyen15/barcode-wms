@@ -16,7 +16,7 @@ const db = require("./db");
 // Đăng ký Font tiếng Nhật và Latin để vẽ Tem nhãn chính xác
 try {
   const fontDir = path.join(__dirname, 'fonts');
-  
+
   // Font tiếng Nhật (Noto Sans JP)
   const notoPath = path.join(fontDir, 'NotoSansJP-Bold.ttf');
   if (fs.existsSync(notoPath)) {
@@ -334,7 +334,10 @@ async function sendTelegramDocument(filePath, caption = "", targetChatId = null)
 async function sendTelegramPhoto(imageBuffer, caption = "", replyMarkup = null) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!token || !chatId) return;
+  if (!token || !chatId) {
+    console.error("[TELEGRAM] Missing token or chatId");
+    return;
+  }
 
   try {
     const url = `https://api.telegram.org/bot${token}/sendPhoto`;
@@ -356,13 +359,17 @@ async function sendTelegramPhoto(imageBuffer, caption = "", replyMarkup = null) 
 
     if (!res.ok) {
       const errBody = await res.text();
-      console.error("Telegram photo send failed:", res.status, errBody);
+      console.error("[TELEGRAM] Photo send failed:", res.status, errBody);
       return null;
     }
     const data = await res.json();
+    if (!data.ok) {
+      console.error("[TELEGRAM] API returned error:", data);
+      return null;
+    }
     return data.result; // Tra ve thong tin tin nhan (co message_id)
   } catch (e) {
-    console.error("sendTelegramPhoto Error:", e.message);
+    console.error("[TELEGRAM] sendTelegramPhoto Error:", e.message);
     return null;
   }
 }
@@ -698,6 +705,9 @@ app.post("/api/external/create", async (req, res) => {
       caption += `\n\n🔗 <a href="${process.env.APP_URL}/scan.html?token=${token}">Xem chi tiết</a>`;
     }
 
+    console.log(`[SHORTCUT] Caption length: ${caption.length} (max 1024)`);
+    console.log(`[SHORTCUT] Caption: ${caption.substring(0, 200)}...`);
+
     const replyMarkup = {
       inline_keyboard: [
         [
@@ -716,6 +726,11 @@ app.post("/api/external/create", async (req, res) => {
       console.error("Shortcut Telegram notify failed:", e);
       return null;
     });
+    if (!tgMsg) {
+      console.error("[SHORTCUT] Failed to send Telegram photo for token:", token);
+    } else {
+      console.log("[SHORTCUT] Telegram photo sent successfully, message_id:", tgMsg.message_id);
+    }
 
     // Neu gui Telegram thanh cong, luu ID tin nhan de sau nay dong bo nut bam
     if (tgMsg) {
@@ -1094,16 +1109,20 @@ app.post("/api/telegram/webhook", async (req, res) => {
         };
 
         try {
+          console.log(`[DELETE REQUEST] Sending to chat_id: ${DELETE_GROUP_CHAT_ID}`);
           const tgRes = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
             method: "POST", headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ chat_id: DELETE_GROUP_CHAT_ID, text: delMsg, parse_mode: "HTML", reply_markup: delMarkup })
           });
           const tgData = await tgRes.json();
+          console.log(`[DELETE REQUEST] Telegram response:`, tgData);
           if (tgData.ok && tgData.result) {
             await db.execute({
               sql: "UPDATE delete_requests SET tg_chat_id = ?, tg_msg_id = ? WHERE id = ?",
               args: [String(tgData.result.chat.id), String(tgData.result.message_id), newReqId]
             });
+          } else if (!tgData.ok) {
+            console.error(`[DELETE REQUEST] Telegram error: ${tgData.description}`);
           }
         } catch (e) { console.error("Telegram delete request from TG button failed:", e); }
 
@@ -2453,9 +2472,9 @@ app.post("/api/items/:id/request-return", requireAuth, requireAdmin, async (req,
 
 app.post("/api/items/:id/delete", requireAuth, requireAdmin, async (req, res) => {
   const id = req.params.id;
-  const { rows } = await db.execute({ 
-    sql: "SELECT id, package_id, name, tg_chat_id, tg_msg_id, post_task_msg_id FROM items WHERE id=?", 
-    args: [id] 
+  const { rows } = await db.execute({
+    sql: "SELECT id, package_id, name, tg_chat_id, tg_msg_id, post_task_msg_id FROM items WHERE id=?",
+    args: [id]
   });
   const item = rows[0];
   if (!item) return res.status(404).json({ error: "Not found" });
@@ -2644,4 +2663,9 @@ async function syncTelegramButtons(itemId) {
 app.listen(3000, "0.0.0.0", () => {
   console.log("WMS running:");
   console.log(" - http://localhost:3000/login.html");
+  console.log("\n📋 Telegram Groups:");
+  console.log(` - DELETE_GROUP_CHAT_ID: ${DELETE_GROUP_CHAT_ID || "❌ NOT SET"}`);
+  console.log(` - RETURN_GROUP_CHAT_ID: ${RETURN_GROUP_CHAT_ID || "❌ NOT SET"}`);
+  console.log(` - TASK_GROUP_CHAT_ID: ${TASK_GROUP_CHAT_ID || "❌ NOT SET"}`);
+  console.log(` - NOTIFICATION_GROUP_CHAT_ID: ${NOTIFICATION_GROUP_CHAT_ID || "❌ NOT SET"}\n`);
 });
