@@ -1817,7 +1817,9 @@ app.post("/api/inventory/export", requireAuth, requireStaff, async (req, res) =>
       sql: `
         SELECT package_id, name, serial_clean as serial, mvd, '-' as scanned_at, '-' as actor, 'MISSING' as audit_status, category
         FROM items
-        WHERE inventory_status = 'UNKNOWN' AND is_deleted = 0
+        WHERE inventory_status = 'UNKNOWN' 
+          AND is_deleted = 0 
+          AND status NOT IN ('SHIPPED', 'RETURN', 'RETURNED', 'HENBIN', 'REQUEST_RETURN')
         ORDER BY category ASC, name ASC
       `,
       args: []
