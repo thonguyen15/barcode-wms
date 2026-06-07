@@ -169,8 +169,17 @@ app.use("/exports", (req, res, next) => {
   next();
 });
 
+app.get("/exports/:filename", (req, res) => {
+  const filePath = path.join(EXPORT_DIR, req.params.filename);
+  if (fs.existsSync(filePath)) {
+    res.sendFile(filePath);
+  } else {
+    res.status(404).send("File not found");
+  }
+});
+
 // ====== Static files (sau guard) ======
-app.use(express.static("public"));
+app.use(express.static(path.join(__dirname, "public")));
 
 // ====== Root ======
 app.get("/api/ping", (req, res) => res.send("pong"));
