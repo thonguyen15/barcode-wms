@@ -2630,6 +2630,22 @@ app.get("/api/admin/bong-stats", requireAuth, requireAdmin, async (req, res) => 
   }
 });
 
+app.get("/api/admin/debug-edit-logs", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const { rows: actors } = await db.execute("SELECT DISTINCT actor, count(*) as count FROM edit_logs GROUP BY actor");
+    const { rows: sampleLogs } = await db.execute(`
+      SELECT id, item_id, actor, changes_json, created_at 
+      FROM edit_logs 
+      WHERE changes_json LIKE '%is_posted%'
+      ORDER BY datetime(created_at) DESC
+      LIMIT 50
+    `);
+    res.json({ actors, sampleLogs });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====== Start server ======
 // Dong bo tat ca cac nut bam tren Telegram (Status, Posted, MeruLogged)
 async function syncTelegramButtons(itemId) {
