@@ -61,6 +61,12 @@
     <div id="testBotMsg" style="margin-top:12px; font-weight:600; font-size:14px"></div>
   </div>
 
+  <div class="card" style="border-left:5px solid #10b981; background:#f0fdf4">
+    <h3 style="margin-bottom:12px">Thống kê bài đăng của Bong</h3>
+    <p style="font-size:13px; color:var(--muted); margin-bottom:16px">Tổng hợp số lượng sản phẩm tài khoản Bong đã đăng (is_posted) theo từng tháng.</p>
+    <div id="bongStatsList" style="font-size:14px; font-weight:500;">Đang tải thống kê...</div>
+  </div>
+
 <script>
 async function logout(){ await fetch("/api/logout",{method:"POST"}); location.href="/login.html"; }
 
@@ -164,7 +170,48 @@ async function testBot() {
   finally { btn.disabled = false; }
 }
 
-document.addEventListener("DOMContentLoaded", loadCategories);
+async function loadBongStats() {
+  const list = document.getElementById("bongStatsList");
+  try {
+    const r = await fetch("/api/admin/bong-stats");
+    const j = await r.json();
+    if (!r.ok) {
+      list.innerHTML = `<span style="color:#ef4444">Lỗi: ${j.error || "Không thể tải"}</span>`;
+      return;
+    }
+    if (!j.rows || j.rows.length === 0) {
+      list.innerHTML = `<span style="color:var(--muted)">Chưa có dữ liệu bài đăng nào của tài khoản Bong.</span>`;
+      return;
+    }
+    list.innerHTML = `
+      <div class="table-wrap">
+        <table cellpadding="10" style="width: 100%; max-width: 400px;">
+          <thead>
+            <tr>
+              <th>Tháng</th>
+              <th style="text-align: right;">Số lượng đã đăng</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${j.rows.map(row => `
+              <tr>
+                <td style="font-weight: 600;">${row.month}</td>
+                <td style="text-align: right; font-weight: 800; color: #10b981;">${row.count}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (e) {
+    list.innerHTML = `<span style="color:#ef4444">Lỗi kết nối server.</span>`;
+  }
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  loadCategories();
+  loadBongStats();
+});
 </script>
 </body>
 </html>

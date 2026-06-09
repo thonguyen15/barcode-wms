@@ -2605,6 +2605,31 @@ app.post("/api/categories/reclassify", requireAuth, requireAdmin, async (req, re
   }
 });
 
+app.get("/api/admin/bong-stats", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const bongUser = process.env.BONG_USER || 'bong';
+    const { rows } = await db.execute({
+      sql: `
+        SELECT 
+          substr(created_at, 1, 7) as month,
+          count(distinct item_id) as count
+        FROM edit_logs
+        WHERE (actor = ? OR lower(actor) = 'bong')
+          AND (
+            changes_json LIKE '%"is_posted":1%'
+            OR changes_json LIKE '%"is_posted":true%'
+          )
+        GROUP BY month
+        ORDER BY month DESC
+      `,
+      args: [bongUser]
+    });
+    res.json({ rows });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====== Start server ======
 // Dong bo tat ca cac nut bam tren Telegram (Status, Posted, MeruLogged)
 async function syncTelegramButtons(itemId) {
