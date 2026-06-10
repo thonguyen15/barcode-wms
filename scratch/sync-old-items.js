@@ -81,6 +81,14 @@ async function resyncOldItems() {
         const resData = await response.json();
         if (resData.ok) {
           console.log(`✅ Success for item ID: ${item.id}`);
+        } else if (resData.error_code === 429 || (resData.parameters && resData.parameters.retry_after)) {
+          const waitSecs = (resData.parameters && resData.parameters.retry_after) || 10;
+          console.log(`⚠️ Rate limited for item ID: ${item.id}. Waiting for ${waitSecs} seconds before retrying...`);
+          await sleep(waitSecs * 1000 + 1000);
+          i--; // Retry the same item
+          continue;
+        } else if (resData.description && resData.description.includes("message is not modified")) {
+          console.log(`ℹ️ Already up-to-date for item ID: ${item.id}`);
         } else {
           console.error(`❌ Telegram edit failed for item ID: ${item.id}. Error: ${resData.description}`);
         }
@@ -88,8 +96,8 @@ async function resyncOldItems() {
         console.error(`❌ Request error for item ID: ${item.id}:`, err.message);
       }
 
-      // Avoid hitting Telegram rate limits (approx 30 messages per second limit)
-      await sleep(350);
+      // Avoid hitting Telegram rate limits (approx 1-2 seconds between edits is safe)
+      await sleep(1500);
     }
 
     console.log("🎉 All items have been processed!");
