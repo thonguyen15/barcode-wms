@@ -2651,7 +2651,7 @@ app.get("/api/admin/debug-edit-logs", requireAuth, requireAdmin, async (req, res
 async function syncTelegramButtons(itemId) {
   try {
     const { rows } = await db.execute({
-      sql: "SELECT id, package_id, name, serial_clean, condition, status, is_posted, is_meru_logged, tg_chat_id, tg_msg_id, created_at FROM items WHERE id = ?",
+      sql: "SELECT id, package_id, name, serial_clean, condition, status, is_posted, is_meru_logged, tg_chat_id, tg_msg_id, created_at, mvd, battery, coverage, note FROM items WHERE id = ?",
       args: [itemId]
     });
     const item = rows[0];
