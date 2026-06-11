@@ -717,13 +717,17 @@ app.post("/api/external/create", async (req, res) => {
     console.log(`[SHORTCUT] Caption length: ${caption.length} (max 1024)`);
     console.log(`[SHORTCUT] Caption: ${caption.substring(0, 200)}...`);
 
+    const firstRow = [
+      { text: `⬜ CREATED`, callback_data: "none" }
+    ];
+    if (process.env.APP_URL) {
+      firstRow.push({ text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${token}` } });
+    }
+    firstRow.push({ text: "↩️", callback_data: `request_return_tg:${newItem.id}` });
+
     const replyMarkup = {
       inline_keyboard: [
-        [
-          { text: `⬜ CREATED`, callback_data: "none" },
-          { text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${token}` } },
-          { text: "↩️", callback_data: `request_return_tg:${newItem.id}` }
-        ],
+        firstRow,
         [
           { text: "🔴 Post", callback_data: `posted:${newItem.id}` },
           { text: "🗑️", callback_data: `request_delete_tg:${newItem.id}` },
@@ -2918,13 +2922,17 @@ async function syncTelegramButtons(itemId) {
     }
 
     // 2. Nut bam Do/Xanh don gian
+    const firstRow = [
+      { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" }
+    ];
+    if (process.env.APP_URL) {
+      firstRow.push({ text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` } });
+    }
+    firstRow.push({ text: "↩️", callback_data: `request_return_tg:${item.id}` });
+
     const replyMarkup = {
       inline_keyboard: [
-        [
-          { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" },
-          { text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` } },
-          { text: "↩️", callback_data: `request_return_tg:${item.id}` }
-        ],
+        firstRow,
         [
           item.is_posted
             ? { text: "🟢 Posted", callback_data: `posted:${item.id}` }

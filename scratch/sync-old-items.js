@@ -12,6 +12,10 @@ async function resyncOldItems() {
     process.exit(1);
   }
 
+  if (!process.env.APP_URL) {
+    console.warn("⚠️ Warning: APP_URL is not set in environment. The 'Sửa' button will be omitted since Telegram Web Apps require a valid HTTPS URL.");
+  }
+
   console.log("🔄 Fetching items with Telegram references from database...");
   try {
     const { rows: items } = await db.execute({
@@ -46,13 +50,17 @@ async function resyncOldItems() {
         caption += `\n\n🔗 <a href="${process.env.APP_URL}/item.html?id=${item.id}">Xem chi tiết trên Web</a>`;
       }
 
+      const firstRow = [
+        { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" }
+      ];
+      if (process.env.APP_URL) {
+        firstRow.push({ text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` } });
+      }
+      firstRow.push({ text: "↩️", callback_data: `request_return_tg:${item.id}` });
+
       const replyMarkup = {
         inline_keyboard: [
-          [
-            { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" },
-            { text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` } },
-            { text: "↩️", callback_data: `request_return_tg:${item.id}` }
-          ],
+          firstRow,
           [
             item.is_posted
               ? { text: "🟢 Posted", callback_data: `posted:${item.id}` }
