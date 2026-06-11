@@ -727,6 +727,9 @@ app.post("/api/external/create", async (req, res) => {
           { text: "🔴 Post", callback_data: `posted:${newItem.id}` },
           { text: "🗑️", callback_data: `request_delete_tg:${newItem.id}` },
           { text: "🔴 Log", callback_data: `meru:${newItem.id}` }
+        ],
+        [
+          { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${newItem.id}` }
         ]
       ]
     };
@@ -921,6 +924,34 @@ app.post("/api/telegram/webhook", async (req, res) => {
             });
           }
         }
+      }
+      if (action === "edit_json_tg") {
+        const { rows } = await db.execute({ sql: "SELECT * FROM items WHERE id = ?", args: [itemId] });
+        const item = rows[0];
+        if (item) {
+          const captionData = {
+            mvd: item.mvd || "",
+            name: item.name || "",
+            serial: item.serial_clean || "",
+            condition: item.condition || "",
+            battery: item.battery || "",
+            coverage: item.coverage || "",
+            note: item.note || ""
+          };
+          
+          const textMsg = 
+            `✏️ <b>Sửa JSON sản phẩm (ID: ${item.id})</b>\n` +
+            `Hãy copy đoạn JSON bên dưới, chỉnh sửa các giá trị và thực hiện <b>Reply (Phản hồi)</b> trực tiếp lại tin nhắn này:\n\n` +
+            `<code>${JSON.stringify(captionData)}</code>`;
+
+          await sendTelegramMessage(textMsg, cb.message.chat.id);
+
+          await fetch(`https://api.telegram.org/bot${token}/answerCallbackQuery`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ callback_query_id: cb.id, text: "✅ Đã gửi mẫu JSON. Hãy reply để sửa!" })
+          });
+        }
+        return res.sendStatus(200);
       }
       if (action === "request_return_tg") {
         const userId = String(cb.from.id);
@@ -1347,11 +1378,119 @@ app.post("/api/telegram/webhook", async (req, res) => {
   const msg = req.body.message;
   if (!msg || !msg.chat) return res.sendStatus(200);
   const chatId = String(msg.chat.id);
-  if (chatId !== String(authorizedChatId) && chatId !== String(DELETE_GROUP_CHAT_ID)) return res.sendStatus(200);
+  const isFromAuthorizedChat =
+    chatId === String(authorizedChatId) ||
+    chatId === String(DELETE_GROUP_CHAT_ID) ||
+    chatId === String(RETURN_GROUP_CHAT_ID) ||
+    chatId === String(TASK_GROUP_CHAT_ID);
+  if (!isFromAuthorizedChat) return res.sendStatus(200);
 
   // Handle Serial as Text (Mark as Posted)
   if (msg.text) {
     const text = msg.text.trim();
+
+    // 0. Handle Sửa JSON reply
+    if (msg.reply_to_message && msg.reply_to_message.text) {
+      const editMatch = msg.reply_to_message.text.match(/Sửa JSON sản phẩm \(ID:\s*(\d+)\)/i);
+      if (editMatch) {
+        const itemId = parseInt(editMatch[1]);
+        try {
+          const { rows } = await db.execute({ sql: "SELECT * FROM items WHERE id = ? AND is_deleted = 0", args: [itemId] });
+          const item = rows[0];
+          if (!item) {
+            await sendTelegramMessage(`❌ Không tìm thấy sản phẩm ID ${itemId} trong database hoặc đã bị xóa.`, chatId);
+            return res.sendStatus(200);
+          }
+
+          // Parse JSON from user reply
+          let obj;
+          try {
+            obj = JSON.parse(text);
+          } catch (e) {
+            await sendTelegramMessage(`❌ Nội dung gửi không phải JSON hợp lệ. Vui lòng kiểm tra lại dấu ngoặc và dấu phẩy.\nLỗi: ${e.message}`, chatId);
+            return res.sendStatus(200);
+          }
+
+          // Fields to update
+          const allowed = ["name", "serial_raw", "serial_clean", "condition", "mvd", "note", "battery", "coverage"];
+          const updates = {};
+          
+          // Map serial key from JSON if user changed it
+          const rawSerial = obj.serial !== undefined ? obj.serial : (obj.serial_raw !== undefined ? obj.serial_raw : item.serial_raw);
+
+          updates.name = (obj.name !== undefined ? obj.name : item.name) || "";
+          updates.serial_raw = (rawSerial !== undefined ? rawSerial : item.serial_raw) || "";
+          updates.condition = (obj.condition !== undefined ? obj.condition : item.condition) || "";
+          updates.mvd = (obj.mvd !== undefined ? obj.mvd : item.mvd) || "";
+          updates.note = (obj.note !== undefined ? obj.note : item.note) || "";
+          updates.battery = (obj.battery !== undefined ? obj.battery : item.battery) || "";
+          updates.coverage = (obj.coverage !== undefined ? obj.coverage : item.coverage) || "";
+
+          // Clean serial
+          updates.serial_clean = (updates.serial_raw.match(/[A-Z0-9]{4,}/i)?.[0] ?? "").trim();
+
+          // Calculate changes for edit_logs
+          const changes = {};
+          for (const k of allowed) {
+            const oldValue = item[k] ?? "";
+            const newValue = String(updates[k] ?? "").trim();
+            if (oldValue !== newValue) {
+              changes[k] = { from: oldValue, to: newValue };
+            }
+          }
+
+          if (Object.keys(changes).length > 0) {
+            const updated_at = nowISO();
+            const actor = getTgActorName(msg.from);
+
+            await db.execute({
+              sql: `
+                UPDATE items SET
+                  name = ?,
+                  serial_raw = ?,
+                  serial_clean = ?,
+                  condition = ?,
+                  mvd = ?,
+                  note = ?,
+                  battery = ?,
+                  coverage = ?,
+                  updated_at = ?
+                WHERE id = ?
+              `,
+              args: [
+                updates.name,
+                updates.serial_raw,
+                updates.serial_clean,
+                updates.condition,
+                updates.mvd,
+                updates.note,
+                updates.battery,
+                updates.coverage,
+                updated_at,
+                itemId
+              ]
+            });
+
+            await db.execute({
+              sql: `INSERT INTO edit_logs(item_id, actor, changes_json, created_at) VALUES(?,?,?,?)`,
+              args: [itemId, actor, JSON.stringify(changes), updated_at]
+            });
+
+            await sendTelegramMessage(`✅ Đã cập nhật thông tin sản phẩm ID <code>${item.package_id}</code> thành công!`, chatId);
+            
+            // Sync Telegram button and caption of the original message!
+            await syncTelegramButtons(itemId);
+          } else {
+            await sendTelegramMessage(`ℹ️ Không có thay đổi nào được thực hiện.`, chatId);
+          }
+
+        } catch (err) {
+          console.error("Telegram Sửa JSON reply processing failed:", err);
+          await sendTelegramMessage(`❌ Có lỗi xảy ra trong quá trình cập nhật: ${err.message}`, chatId);
+        }
+        return res.sendStatus(200);
+      }
+    }
     const serial_clean = (text.match(/[A-Z0-9]{6,}/i)?.[0] ?? "").trim();
 
     if (serial_clean) {
@@ -2690,6 +2829,9 @@ async function syncTelegramButtons(itemId) {
           item.is_meru_logged
             ? { text: "🟢 Logged", callback_data: `meru:${item.id}` }
             : { text: "🔴 Log", callback_data: `meru:${item.id}` }
+        ],
+        [
+          { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${item.id}` }
         ]
       ]
     };
