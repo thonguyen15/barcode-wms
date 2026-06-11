@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sửa Thông Tin Sản Phẩm</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg-color: var(--tg-theme-bg-color, #181818);
+      --text-color: var(--tg-theme-text-color, #ffffff);
+      --hint-color: var(--tg-theme-hint-color, #aaaaaa);
+      --button-color: var(--tg-theme-button-color, #2481cc);
+      --button-text-color: var(--tg-theme-button-text-color, #ffffff);
+      --secondary-bg-color: var(--tg-theme-secondary-bg-color, #202020);
+    }
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      margin: 0;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      box-sizing: border-box;
+    }
+    h3 {
+      margin-top: 0;
+      margin-bottom: 8px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    p {
+      color: var(--hint-color);
+      font-size: 14px;
+      margin-top: 0;
+      margin-bottom: 16px;
+    }
+    .editor-container {
+      flex-grow: 1;
+      display: flex;
+      flex-direction: column;
+      margin-bottom: 16px;
+    }
+    textarea {
+      flex-grow: 1;
+      background-color: var(--secondary-bg-color);
+      color: var(--text-color);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 8px;
+      padding: 12px;
+      font-family: "Courier New", Courier, monospace;
+      font-size: 14px;
+      line-height: 1.5;
+      resize: none;
+      outline: none;
+      box-sizing: border-box;
+    }
+    textarea:focus {
+      border-color: var(--button-color);
+    }
+    .btn {
+      background-color: var(--button-color);
+      color: var(--button-text-color);
+      border: none;
+      border-radius: 8px;
+      padding: 14px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      width: 100%;
+      box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+      transition: opacity 0.2s;
+    }
+    .btn:active {
+      opacity: 0.8;
+    }
+    .btn:disabled {
+      background-color: var(--hint-color);
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+    .error-msg {
+      color: #ff4d4f;
+      font-size: 13px;
+      margin-top: 6px;
+      display: none;
+    }
+    .loader {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100%;
+      font-size: 16px;
+      color: var(--hint-color);
+    }
+  </style>
+</head>
+<body>
+  <div id="loading" class="loader">Đang tải thông tin sản phẩm...</div>
+
+  <div id="content" style="display: none; flex-direction: column; height: 100%;">
+    <h3>Chỉnh sửa dữ liệu JSON</h3>
+    <p>Thay đổi các trường bên dưới và nhấn Cập nhật.</p>
+    
+    <div class="editor-container">
+      <textarea id="json-input" spellcheck="false"></textarea>
+      <div id="error-box" class="error-msg">JSON không hợp lệ! Vui lòng kiểm tra lại.</div>
+    </div>
+
+    <button id="submit-btn" class="btn" onclick="submitData()">Cập nhật</button>
+  </div>
+
+  <script>
+    const tg = window.Telegram.WebApp;
+    tg.ready();
+    tg.expand(); // Mở rộng hết chiều cao khả dụng
+
+    const urlParams = new URLSearchParams(window.location.search);
+    const token = urlParams.get('token');
+
+    if (!token) {
+      document.getElementById('loading').innerText = 'Lỗi: Thiếu mã bảo mật (token).';
+    } else {
+      fetch(`/api/public/item?token=${encodeURIComponent(token)}`)
+        .then(res => {
+          if (!res.ok) throw new Error('Không thể tải thông tin sản phẩm.');
+          return res.json();
+        })
+        .then(data => {
+          document.getElementById('json-input').value = JSON.stringify(data, null, 2);
+          document.getElementById('loading').style.display = 'none';
+          document.getElementById('content').style.display = 'flex';
+        })
+        .catch(err => {
+          document.getElementById('loading').innerText = `Lỗi: ${err.message}`;
+        });
+    }
+
+    async function submitData() {
+      const jsonText = document.getElementById('json-input').value;
+      const errorBox = document.getElementById('error-box');
+      const submitBtn = document.getElementById('submit-btn');
+
+      errorBox.style.display = 'none';
+
+      let parsedData;
+      try {
+        parsedData = JSON.parse(jsonText);
+      } catch (e) {
+        errorBox.innerText = `JSON không hợp lệ: ${e.message}`;
+        errorBox.style.display = 'block';
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Đang cập nhật...';
+
+      try {
+        const res = await fetch(`/api/public/item?token=${encodeURIComponent(token)}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(parsedData)
+        });
+
+        const resData = await res.json();
+        if (resData.ok) {
+          tg.showAlert('Cập nhật thành công!', () => {
+            tg.close();
+          });
+        } else {
+          throw new Error(resData.error || 'Cập nhật thất bại.');
+        }
+      } catch (err) {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Cập nhật';
+        errorBox.innerText = `Lỗi: ${err.message}`;
+        errorBox.style.display = 'block';
+      }
+    }
+  </script>
+</body>
+</html>

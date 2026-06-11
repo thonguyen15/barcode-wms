@@ -16,7 +16,7 @@ async function resyncOldItems() {
   try {
     const { rows: items } = await db.execute({
       sql: `
-        SELECT id, package_id, name, serial_clean, condition, status, is_posted, is_meru_logged, tg_chat_id, tg_msg_id, created_at, mvd, battery, coverage, note
+        SELECT id, package_id, token, name, serial_clean, condition, status, is_posted, is_meru_logged, tg_chat_id, tg_msg_id, created_at, mvd, battery, coverage, note
         FROM items
         WHERE tg_chat_id IS NOT NULL 
           AND tg_msg_id IS NOT NULL 
@@ -50,7 +50,7 @@ async function resyncOldItems() {
         inline_keyboard: [
           [
             { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" },
-            { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${item.id}` },
+            { text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` } },
             { text: "↩️", callback_data: `request_return_tg:${item.id}` }
           ],
           [

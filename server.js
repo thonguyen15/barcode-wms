@@ -721,7 +721,7 @@ app.post("/api/external/create", async (req, res) => {
       inline_keyboard: [
         [
           { text: `⬜ CREATED`, callback_data: "none" },
-          { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${newItem.id}` },
+          { text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${token}` } },
           { text: "↩️", callback_data: `request_return_tg:${newItem.id}` }
         ],
         [
@@ -2193,6 +2193,111 @@ app.post("/api/items/:id/meru-logged", requireAuth, async (req, res) => {
   res.json({ ok: true });
 });
 
+// ====== Public Secure API for Telegram Web App ======
+app.get("/api/public/item", async (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(400).json({ error: "Missing token" });
+
+  try {
+    const { rows } = await db.execute({ sql: "SELECT * FROM items WHERE token = ? AND is_deleted = 0", args: [token] });
+    const item = rows[0];
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    res.json({
+      mvd: item.mvd || "",
+      name: item.name || "",
+      serial: item.serial_clean || "",
+      condition: item.condition || "",
+      battery: item.battery || "",
+      coverage: item.coverage || "",
+      note: item.note || ""
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+app.post("/api/public/item", async (req, res) => {
+  const token = req.query.token;
+  if (!token) return res.status(400).json({ error: "Missing token" });
+
+  try {
+    const { rows } = await db.execute({ sql: "SELECT * FROM items WHERE token = ? AND is_deleted = 0", args: [token] });
+    const item = rows[0];
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    const fields = req.body;
+    const allowed = ["name", "serial_raw", "serial_clean", "condition", "mvd", "note", "battery", "coverage"];
+    const updates = {};
+
+    const rawSerial = fields.serial !== undefined ? fields.serial : (fields.serial_raw !== undefined ? fields.serial_raw : item.serial_raw);
+
+    updates.name = (fields.name !== undefined ? fields.name : item.name) || "";
+    updates.serial_raw = (rawSerial !== undefined ? rawSerial : item.serial_raw) || "";
+    updates.condition = (fields.condition !== undefined ? fields.condition : item.condition) || "";
+    updates.mvd = (fields.mvd !== undefined ? fields.mvd : item.mvd) || "";
+    updates.note = (fields.note !== undefined ? fields.note : item.note) || "";
+    updates.battery = (fields.battery !== undefined ? fields.battery : item.battery) || "";
+    updates.coverage = (fields.coverage !== undefined ? fields.coverage : item.coverage) || "";
+
+    updates.serial_clean = (updates.serial_raw.match(/[A-Z0-9]{4,}/i)?.[0] ?? "").trim();
+
+    const changes = {};
+    for (const k of allowed) {
+      const oldValue = item[k] ?? "";
+      const newValue = String(updates[k] ?? "").trim();
+      if (oldValue !== newValue) {
+        changes[k] = { from: oldValue, to: newValue };
+      }
+    }
+
+    if (Object.keys(changes).length > 0) {
+      const updated_at = nowISO();
+      const actor = "TelegramWebApp";
+
+      await db.execute({
+        sql: `
+          UPDATE items SET
+            name = ?,
+            serial_raw = ?,
+            serial_clean = ?,
+            condition = ?,
+            mvd = ?,
+            note = ?,
+            battery = ?,
+            coverage = ?,
+            updated_at = ?
+          WHERE id = ?
+        `,
+        args: [
+          updates.name,
+          updates.serial_raw,
+          updates.serial_clean,
+          updates.condition,
+          updates.mvd,
+          updates.note,
+          updates.battery,
+          updates.coverage,
+          updated_at,
+          item.id
+        ]
+      });
+
+      await db.execute({
+        sql: `INSERT INTO edit_logs(item_id, actor, changes_json, created_at) VALUES(?,?,?,?)`,
+        args: [item.id, actor, JSON.stringify(changes), updated_at]
+      });
+
+      // Synchronize back to Telegram
+      await syncTelegramButtons(item.id);
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ====== Shortcut API: Mark as Posted by Serial ======
 app.post("/api/external/mark-posted", async (req, res) => {
   const apiKey = req.headers["x-api-key"];
@@ -2788,7 +2893,7 @@ app.get("/api/admin/debug-edit-logs", requireAuth, requireAdmin, async (req, res
 async function syncTelegramButtons(itemId) {
   try {
     const { rows } = await db.execute({
-      sql: "SELECT id, package_id, name, serial_clean, condition, status, is_posted, is_meru_logged, tg_chat_id, tg_msg_id, created_at, mvd, battery, coverage, note FROM items WHERE id = ?",
+      sql: "SELECT id, package_id, token, name, serial_clean, condition, status, is_posted, is_meru_logged, tg_chat_id, tg_msg_id, created_at, mvd, battery, coverage, note FROM items WHERE id = ?",
       args: [itemId]
     });
     const item = rows[0];
@@ -2817,7 +2922,7 @@ async function syncTelegramButtons(itemId) {
       inline_keyboard: [
         [
           { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" },
-          { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${item.id}` },
+          { text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` } },
           { text: "↩️", callback_data: `request_return_tg:${item.id}` }
         ],
         [
