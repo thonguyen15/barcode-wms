@@ -721,7 +721,7 @@ app.post("/api/external/create", async (req, res) => {
       { text: `⬜ CREATED`, callback_data: "none" }
     ];
     if (process.env.APP_URL) {
-      firstRow.push({ text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${token}` } });
+      firstRow.push({ text: "Sửa", url: `${process.env.APP_URL}/telegram-edit.html?token=${token}` });
     }
     firstRow.push({ text: "↩️", callback_data: `request_return_tg:${newItem.id}` });
 
@@ -2926,7 +2926,7 @@ async function syncTelegramButtons(itemId) {
       { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" }
     ];
     if (process.env.APP_URL) {
-      firstRow.push({ text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` } });
+      firstRow.push({ text: "Sửa", url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` });
     }
     firstRow.push({ text: "↩️", callback_data: `request_return_tg:${item.id}` });
 

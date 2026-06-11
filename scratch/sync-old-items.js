@@ -54,7 +54,7 @@ async function resyncOldItems() {
         { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" }
       ];
       if (process.env.APP_URL) {
-        firstRow.push({ text: "Sửa", web_app: { url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` } });
+        firstRow.push({ text: "Sửa", url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` });
       }
       firstRow.push({ text: "↩️", callback_data: `request_return_tg:${item.id}` });
 
