@@ -721,15 +721,13 @@ app.post("/api/external/create", async (req, res) => {
       inline_keyboard: [
         [
           { text: `⬜ CREATED`, callback_data: "none" },
+          { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${newItem.id}` },
           { text: "↩️", callback_data: `request_return_tg:${newItem.id}` }
         ],
         [
           { text: "🔴 Post", callback_data: `posted:${newItem.id}` },
           { text: "🗑️", callback_data: `request_delete_tg:${newItem.id}` },
           { text: "🔴 Log", callback_data: `meru:${newItem.id}` }
-        ],
-        [
-          { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${newItem.id}` }
         ]
       ]
     };
@@ -2819,6 +2817,7 @@ async function syncTelegramButtons(itemId) {
       inline_keyboard: [
         [
           { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" },
+          { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${item.id}` },
           { text: "↩️", callback_data: `request_return_tg:${item.id}` }
         ],
         [
@@ -2829,9 +2828,6 @@ async function syncTelegramButtons(itemId) {
           item.is_meru_logged
             ? { text: "🟢 Logged", callback_data: `meru:${item.id}` }
             : { text: "🔴 Log", callback_data: `meru:${item.id}` }
-        ],
-        [
-          { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${item.id}` }
         ]
       ]
     };

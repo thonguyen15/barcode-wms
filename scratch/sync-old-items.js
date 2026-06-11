@@ -50,6 +50,7 @@ async function resyncOldItems() {
         inline_keyboard: [
           [
             { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" },
+            { text: "✏️ Sửa JSON", callback_data: `edit_json_tg:${item.id}` },
             { text: "↩️", callback_data: `request_return_tg:${item.id}` }
           ],
           [
