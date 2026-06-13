@@ -51,12 +51,9 @@ async function resyncOldItems() {
       }
 
       const firstRow = [
-        { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" }
+        { text: `${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[item.status] || '⬜'} ${item.status}`, callback_data: "none" },
+        { text: "↩️", callback_data: `request_return_tg:${item.id}` }
       ];
-      if (process.env.APP_URL) {
-        firstRow.push({ text: "Sửa", url: `${process.env.APP_URL}/telegram-edit.html?token=${item.token}` });
-      }
-      firstRow.push({ text: "↩️", callback_data: `request_return_tg:${item.id}` });
 
       const replyMarkup = {
         inline_keyboard: [
