@@ -785,6 +785,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
       const adminId = process.env.TELEGRAM_ADMIN_ID
         ? String(process.env.TELEGRAM_ADMIN_ID).trim()
         : String(process.env.AUTHORIZED_TELEGRAM_USER_IDS || "").split(',')[0].trim();
+      const authorizedUserIds = String(process.env.AUTHORIZED_TELEGRAM_USER_IDS || "").split(',').map(id => id.trim());
       const userId = String(cb.from.id);
 
       // Phân quyền chi tiết theo yêu cầu mới
