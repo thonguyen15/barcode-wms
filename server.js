@@ -827,6 +827,30 @@ app.post("/api/telegram/webhook", async (req, res) => {
         return res.sendStatus(200);
       }
 
+      // Tự động sửa lỗi (Self-healing): Đồng bộ lại tg_chat_id và tg_msg_id nếu bị thiếu hoặc sai lệch
+      if (itemId && !isNaN(Number(itemId)) && action !== "return_done") {
+        try {
+          const { rows: itemRows } = await db.execute({
+            sql: "SELECT id, tg_chat_id, tg_msg_id FROM items WHERE id = ? AND is_deleted = 0",
+            args: [Number(itemId)]
+          });
+          const dbItem = itemRows[0];
+          if (dbItem) {
+            const currentChatId = String(cb.message.chat.id);
+            const currentMsgId = String(cb.message.message_id);
+            if (dbItem.tg_chat_id !== currentChatId || dbItem.tg_msg_id !== currentMsgId) {
+              console.log(`[SELF-HEALING] Updating TG references for item ${dbItem.id}: chat_id ${dbItem.tg_chat_id} -> ${currentChatId}, msg_id ${dbItem.tg_msg_id} -> ${currentMsgId}`);
+              await db.execute({
+                sql: "UPDATE items SET tg_chat_id = ?, tg_msg_id = ? WHERE id = ?",
+                args: [currentChatId, currentMsgId, dbItem.id]
+              });
+            }
+          }
+        } catch (err) {
+          console.error("[SELF-HEALING] Error healing TG references:", err);
+        }
+      }
+
       if (action === "copy_item") {
         const { rows } = await db.execute({ sql: "SELECT * FROM items WHERE id = ?", args: [itemId] });
         const item = rows[0];
@@ -1641,33 +1665,6 @@ app.post("/api/telegram/webhook", async (req, res) => {
 
           return res.sendStatus(200);
         }
-      }
-    }
-    const isJsonLike = text.startsWith("{") && text.endsWith("}");
-    const serial_clean = !isJsonLike ? (text.match(/[A-Z0-9]{6,}/i)?.[0] ?? "").trim() : "";
-
-    if (serial_clean) {
-      try {
-        const { rows } = await db.execute({
-          sql: "SELECT * FROM items WHERE (serial_clean = ? OR serial_raw = ?) AND is_deleted = 0 LIMIT 1",
-          args: [serial_clean, text]
-        });
-        const item = rows[0];
-
-        if (item) {
-          const updated_at = nowISO();
-          if (!item.is_posted) {
-            await db.execute({ sql: "UPDATE items SET is_posted = 1, updated_at = ? WHERE id = ?", args: [updated_at, item.id] });
-            await db.execute({ sql: "INSERT INTO edit_logs(item_id, actor, changes_json, created_at) VALUES(?,?,?,?)", args: [item.id, 'TelegramBot', JSON.stringify({ is_posted: 1 }), updated_at] });
-            await sendTelegramMessage(`✅ <b>Đã cập nhật Đã đăng:</b>\n📦 ID: <code>${item.package_id}</code>\n🏷️ Tên: ${escTg(item.name)}\n🔢 Serial: <code>${item.serial_clean}</code>`);
-          } else {
-            await sendTelegramMessage(`ℹ️ SP <code>${item.package_id}</code> (${item.serial_clean}) đã được đánh dấu Đã đăng từ trước.`);
-          }
-        } else {
-          if (text.length >= 6) await sendTelegramMessage(`❌ Không tìm thấy sản phẩm nào có Serial: <code>${text}</code>`);
-        }
-      } catch (e) {
-        console.error("Telegram text processing failed:", e);
       }
     }
 
