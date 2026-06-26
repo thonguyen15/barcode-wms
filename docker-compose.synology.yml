@@ -1,0 +1,29 @@
+# Synology DSM — docker-compose v1 compatible.
+# Copy THIS file + .env to the server, then run:
+#   docker-compose -f docker-compose.synology.yml pull
+#   docker-compose -f docker-compose.synology.yml up -d
+#
+# v1 notes:
+#  - no `pull_policy` (v2-only) -> pull manually before `up`
+#  - env_file passes values RAW to the container, so the bcrypt `$` in .env
+#    is preserved (login works). A harmless "variable is not set" warning
+#    about the bcrypt fragment may appear — it does NOT affect the container.
+services:
+  wms:
+    image: quocdat029x/barcode-wms:latest
+    container_name: barcode-wms
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - exports:/app/public/exports
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login.html').then(function(r){process.exit(r.status===200?0:1)}).catch(function(){process.exit(1)})"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  exports:
