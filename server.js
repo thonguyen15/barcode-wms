@@ -708,7 +708,7 @@ app.post("/api/external/create", async (req, res) => {
       coverage: fields.coverage || "",
       note: fields.note || ""
     };
-    let caption = `<code>${JSON.stringify(captionData)}</code>`;
+    let caption = `<code>${escTg(JSON.stringify(captionData))}</code>`;
 
     if (process.env.APP_URL) {
       caption += `\n\n🔗 <a href="${process.env.APP_URL}/scan.html?token=${token}">Xem chi tiết</a>`;
@@ -966,7 +966,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
           const textMsg =
             `✏️ <b>Sửa JSON sản phẩm (ID: ${item.id})</b>\n` +
             `Hãy copy đoạn JSON bên dưới, chỉnh sửa các giá trị và thực hiện <b>Reply (Phản hồi)</b> trực tiếp lại tin nhắn này:\n\n` +
-            `<code>${JSON.stringify(captionData)}</code>`;
+            `<code>${escTg(JSON.stringify(captionData))}</code>`;
 
           await sendTelegramMessage(textMsg, cb.message.chat.id);
 
@@ -1417,7 +1417,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
     if (msg.reply_to_message) {
       let item = null;
       let helperMsgId = null;
-      
+
       const editMatch = msg.reply_to_message.text ? msg.reply_to_message.text.match(/Sửa JSON sản phẩm \(ID:\s*(\d+)\)/i) : null;
       if (editMatch) {
         const itemId = parseInt(editMatch[1]);
@@ -1484,7 +1484,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
             const userId = String(msg.from.id);
 
             const isAuthorized = (userId === adminId) || (aaronId && userId === aaronId);
-            
+
             if (!isAuthorized) {
               // Delete the reply message to keep the chat clean
               try {
@@ -1493,7 +1493,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
                   headers: { "Content-Type": "application/json" },
                   body: JSON.stringify({ chat_id: chatId, message_id: msg.message_id })
                 });
-              } catch (e) {}
+              } catch (e) { }
 
               // Send warning and delete it after 5 seconds
               try {
@@ -1512,10 +1512,10 @@ app.post("/api/telegram/webhook", async (req, res) => {
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify({ chat_id: chatId, message_id: tempMsgId })
                       });
-                    } catch (e) {}
+                    } catch (e) { }
                   }, 5000);
                 }
-              } catch (e) {}
+              } catch (e) { }
 
               return res.sendStatus(200);
             }
@@ -1631,10 +1631,10 @@ app.post("/api/telegram/webhook", async (req, res) => {
                       headers: { "Content-Type": "application/json" },
                       body: JSON.stringify({ chat_id: chatId, message_id: tempMsgId })
                     });
-                  } catch (e) {}
+                  } catch (e) { }
                 }, 3000);
               }
-            } catch (e) {}
+            } catch (e) { }
 
             return res.sendStatus(200);
           }
@@ -1658,10 +1658,10 @@ app.post("/api/telegram/webhook", async (req, res) => {
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ chat_id: chatId, message_id: tempMsgId })
                   });
-                } catch (e) {}
+                } catch (e) { }
               }, 5000);
             }
-          } catch (e) {}
+          } catch (e) { }
 
           return res.sendStatus(200);
         }
@@ -3063,7 +3063,7 @@ async function syncTelegramButtons(itemId) {
       coverage: item.coverage || "",
       note: item.note || ""
     };
-    let caption = `<code>${JSON.stringify(captionData)}</code>`;
+    let caption = `<code>${escTg(JSON.stringify(captionData))}</code>`;
 
     if (process.env.APP_URL) {
       caption += `\n\n🔗 <a href="${process.env.APP_URL}/item.html?id=${item.id}">Xem chi tiết trên Web</a>`;
