@@ -1,0 +1,34 @@
+# Keep secrets & local junk out of the image
+node_modules
+npm-debug.log*
+.env
+.env.*
+!.env.example
+
+# VCS & tooling
+.git
+.gitignore
+.gitattributes
+.github
+.claude
+.claude-flow
+.vscode
+
+# Local databases
+*.sqlite
+*.sqlite-*
+*.db
+barcode_wms.db
+
+# Scratch / build artifacts
+scratch
+public/exports
+
+# Docker files themselves don't belong in the image
+Dockerfile
+.dockerignore
+docker-compose*.yml
+
+# Docs
+CLAUDE.md
+README.md
