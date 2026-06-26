@@ -43,6 +43,11 @@ try {
 
 const app = express();
 
+// App chạy sau reverse proxy (Render / Synology / Cloudflare) nên cần trust proxy
+// để express-rate-limit lấy đúng client IP từ X-Forwarded-For (nếu không sẽ throw
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR). 1 = tin 1 hop proxy gần nhất.
+app.set('trust proxy', 1);
+
 // ====== Security Middleware ======
 app.use(helmet({
   contentSecurityPolicy: false, // Disabled CSP to avoid breaking inline scripts/styles
