@@ -288,6 +288,33 @@ function getTgActorName(from) {
 }
 
 // ====== Telegram Alerts ======
+// Telegram fetch với timeout + retry — giảm "miss" khi Render/Telegram network blip.
+// (sendPhoto/sendMessage/sendDocument trước đây nuốt silent mọi lỗi → item có trên
+// web nhưng không gửi được Telegram.)
+async function tgFetch(url, options = {}) {
+  const MAX_ATTEMPTS = 3;
+  const TIMEOUT_MS = 15000;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...options, signal: ctrl.signal });
+      clearTimeout(timer);
+      return res;
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e;
+      const reason = e.name === "AbortError" ? `timeout ${TIMEOUT_MS}ms` : e.message;
+      console.error(`[TELEGRAM] fetch fail (lần ${attempt}/${MAX_ATTEMPTS}): ${reason}`);
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, 600 * attempt)); // backoff 0.6s, 1.2s
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function sendTelegramMessage(text, targetChatId = null) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = targetChatId || process.env.TELEGRAM_CHAT_ID;
@@ -295,7 +322,7 @@ async function sendTelegramMessage(text, targetChatId = null) {
 
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    await fetch(url, {
+    await tgFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -327,10 +354,10 @@ async function sendTelegramDocument(filePath, caption = "", targetChatId = null)
     const blob = new globalThis.Blob([fileBuffer], { type: "text/csv" });
     form.append("document", blob, path.basename(filePath));
 
-    const res = await fetch(url, {
+    const res = await tgFetch(url, {
       method: "POST",
       body: form
-      // Lưu ý: KHÔNG set Content-Type header thủ công khi dùng native FormData, 
+      // Lưu ý: KHÔNG set Content-Type header thủ công khi dùng native FormData,
       // fetch sẽ tự động set boundary cho mình.
     });
 
@@ -366,7 +393,7 @@ async function sendTelegramPhoto(imageBuffer, caption = "", replyMarkup = null) 
     const blob = new globalThis.Blob([imageBuffer], { type: "image/png" });
     form.append("photo", blob, "qr_code.png");
 
-    const res = await fetch(url, {
+    const res = await tgFetch(url, {
       method: "POST",
       body: form
     });
