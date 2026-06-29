@@ -5,3 +5,9 @@ wms.sqlite-wal
 wms.sqlite-journal
 node_modules
 .DS_Store
+
+# IDE / local tooling
+.idea/
+.vscode/
+.claude/
+.claude-flow/

@@ -1,0 +1,47 @@
+name: Deploy (self-hosted on Synology)
+
+# Chạy trên self-hosted runner gắn trên Synology (private repo -> an toàn).
+# Runner build image native amd64 + deploy local luôn (không cần Docker Hub / SSH).
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-wms
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build & deploy
+        env:
+          ENV_FILE: /volume2/docker/barcode-wms/.env
+        run: bash scripts/deploy.sh
+
+      - name: Smoke test (login.html qua container)
+        run: |
+          sleep 4
+          for i in $(seq 1 15); do
+            if docker exec barcode-wms node -e \
+              "fetch('http://127.0.0.1:3000/login.html').then(r=>process.exit(r.status===200?0:1)).catch(()=>process.exit(1))" 2>/dev/null; then
+              echo "✓ healthy (lần $i)"; exit 0
+            fi
+            echo "  lần $i: chưa sẵn sàng, đợi..."; sleep 2
+          done
+          echo "❌ smoke test thất bại — log container:"; docker logs --tail 40 barcode-wms; exit 1
+
+      - name: Notify Telegram
+        if: always()
+        env:
+          TG_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TG_CHAT: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          [ -z "$TG_TOKEN" ] && { echo "(chưa set TELEGRAM secrets — bỏ qua notify)"; exit 0; }
+          curl -s --max-time 10 "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \
+            -d "chat_id=${TG_CHAT}" \
+            -d "text=🚀 barcode-wms deploy ${{ job.status }} | commit ${{ github.sha }}" >/dev/null || true

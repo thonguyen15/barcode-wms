@@ -43,6 +43,11 @@ try {
 
 const app = express();
 
+// App chạy sau reverse proxy (Render / Synology / Cloudflare) nên cần trust proxy
+// để express-rate-limit lấy đúng client IP từ X-Forwarded-For (nếu không sẽ throw
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR). 1 = tin 1 hop proxy gần nhất.
+app.set('trust proxy', 1);
+
 // ====== Security Middleware ======
 app.use(helmet({
   contentSecurityPolicy: false, // Disabled CSP to avoid breaking inline scripts/styles
@@ -283,6 +288,33 @@ function getTgActorName(from) {
 }
 
 // ====== Telegram Alerts ======
+// Telegram fetch với timeout + retry — giảm "miss" khi Render/Telegram network blip.
+// (sendPhoto/sendMessage/sendDocument trước đây nuốt silent mọi lỗi → item có trên
+// web nhưng không gửi được Telegram.)
+async function tgFetch(url, options = {}) {
+  const MAX_ATTEMPTS = 3;
+  const TIMEOUT_MS = 15000;
+  let lastErr;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      const res = await fetch(url, { ...options, signal: ctrl.signal });
+      clearTimeout(timer);
+      return res;
+    } catch (e) {
+      clearTimeout(timer);
+      lastErr = e;
+      const reason = e.name === "AbortError" ? `timeout ${TIMEOUT_MS}ms` : e.message;
+      console.error(`[TELEGRAM] fetch fail (lần ${attempt}/${MAX_ATTEMPTS}): ${reason}`);
+      if (attempt < MAX_ATTEMPTS) {
+        await new Promise(r => setTimeout(r, 600 * attempt)); // backoff 0.6s, 1.2s
+      }
+    }
+  }
+  throw lastErr;
+}
+
 async function sendTelegramMessage(text, targetChatId = null) {
   const token = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = targetChatId || process.env.TELEGRAM_CHAT_ID;
@@ -290,7 +322,7 @@ async function sendTelegramMessage(text, targetChatId = null) {
 
   try {
     const url = `https://api.telegram.org/bot${token}/sendMessage`;
-    await fetch(url, {
+    await tgFetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -322,10 +354,10 @@ async function sendTelegramDocument(filePath, caption = "", targetChatId = null)
     const blob = new globalThis.Blob([fileBuffer], { type: "text/csv" });
     form.append("document", blob, path.basename(filePath));
 
-    const res = await fetch(url, {
+    const res = await tgFetch(url, {
       method: "POST",
       body: form
-      // Lưu ý: KHÔNG set Content-Type header thủ công khi dùng native FormData, 
+      // Lưu ý: KHÔNG set Content-Type header thủ công khi dùng native FormData,
       // fetch sẽ tự động set boundary cho mình.
     });
 
@@ -361,7 +393,7 @@ async function sendTelegramPhoto(imageBuffer, caption = "", replyMarkup = null) 
     const blob = new globalThis.Blob([imageBuffer], { type: "image/png" });
     form.append("photo", blob, "qr_code.png");
 
-    const res = await fetch(url, {
+    const res = await tgFetch(url, {
       method: "POST",
       body: form
     });
@@ -561,7 +593,7 @@ function parsePayload(text) {
   }
 
   const serial_raw = obj.serial ?? "";
-  const serial_clean = (serial_raw.match(/[A-Z0-9]{6,}/i)?.[0] ?? "").trim();
+  const serial_clean = (serial_raw.match(/[A-Z0-9]{6,}/i)?.[0] ?? "").trim().toUpperCase();
 
   return {
     name: (obj.name ?? "").trim(),
@@ -589,7 +621,7 @@ app.post("/api/items", requireAuth, requireStaff, async (req, res) => {
       sql: `
       SELECT id, package_id, name, serial_clean
       FROM items
-      WHERE serial_clean = ?
+      WHERE LOWER(serial_clean) = LOWER(?)
         AND is_deleted = 0
       LIMIT 1
     `,
@@ -662,12 +694,12 @@ app.post("/api/external/create", async (req, res) => {
       coverage: (req.body.coverage ?? "").trim(),
     };
 
-    fields.serial_clean = (fields.serial_raw.match(/[A-Z0-9]{4,}/i)?.[0] ?? "").trim();
+    fields.serial_clean = (fields.serial_raw.match(/[A-Z0-9]{4,}/i)?.[0] ?? "").trim().toUpperCase();
 
     // Loại bỏ kiểm tra điều kiện (validation) theo yêu cầu người dùng
     if (fields.serial_clean) {
       const { rows: existRows } = await db.execute({
-        sql: `SELECT package_id FROM items WHERE serial_clean = ? AND is_deleted = 0 LIMIT 1`,
+        sql: `SELECT package_id FROM items WHERE LOWER(serial_clean) = LOWER(?) AND is_deleted = 0 LIMIT 1`,
         args: [fields.serial_clean]
       });
       if (existRows[0]) {
@@ -699,20 +731,26 @@ app.post("/api/external/create", async (req, res) => {
     const qrBuffer = await QRCode.toBuffer(token, { margin: 1, width: 400, errorCorrectionLevel: 'L' });
     const labelBuffer = await generateLabelBuffer(fields, qrBuffer);
 
-    const captionData = {
-      mvd: fields.mvd || "",
-      name: fields.name || "",
-      serial: fields.serial_clean || "",
-      condition: fields.condition || "",
-      battery: fields.battery || "",
-      coverage: fields.coverage || "",
-      note: fields.note || ""
+    // Build caption; cắt note nếu tổng vượt giới hạn 1024 ký tự của Telegram
+    // (trước đây note dài → caption > 1024 → sendPhoto bị Telegram reject → miss).
+    const linkSuffix = process.env.APP_URL
+      ? `\n\n🔗 <a href="${process.env.APP_URL}/scan.html?token=${token}">Xem chi tiết</a>`
+      : "";
+    const buildCaption = (noteText) => {
+      const data = {
+        mvd: fields.mvd || "", name: fields.name || "", serial: fields.serial_clean || "",
+        condition: fields.condition || "", battery: fields.battery || "",
+        coverage: fields.coverage || "", note: noteText
+      };
+      return `<code>${escTg(JSON.stringify(data))}</code>${linkSuffix}`;
     };
-    let caption = `<code>${escTg(JSON.stringify(captionData))}</code>`;
-
-    if (process.env.APP_URL) {
-      caption += `\n\n🔗 <a href="${process.env.APP_URL}/scan.html?token=${token}">Xem chi tiết</a>`;
+    let captionNote = fields.note || "";
+    let caption = buildCaption(captionNote);
+    for (let i = 0; i < 60 && caption.length > 1024 && captionNote.length > 0; i++) {
+      captionNote = captionNote.slice(0, Math.max(0, captionNote.length - (caption.length - 1024) - 8));
+      caption = buildCaption(captionNote);
     }
+    if (caption.length > 1024) caption = caption.slice(0, 1021) + "...";
 
     console.log(`[SHORTCUT] Caption length: ${caption.length} (max 1024)`);
     console.log(`[SHORTCUT] Caption: ${caption.substring(0, 200)}...`);
@@ -1444,7 +1482,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
                 const clean = (serial.match(/[A-Z0-9]{4,}/i)?.[0] ?? "").trim();
                 if (clean) {
                   const { rows: fallbackRows } = await db.execute({
-                    sql: "SELECT * FROM items WHERE serial_clean = ? AND is_deleted = 0 LIMIT 1",
+                    sql: "SELECT * FROM items WHERE LOWER(serial_clean) = LOWER(?) AND is_deleted = 0 LIMIT 1",
                     args: [clean]
                   });
                   item = fallbackRows[0];
@@ -1533,7 +1571,7 @@ app.post("/api/telegram/webhook", async (req, res) => {
 
           if (isProcessed) {
             if (updates.serial_raw !== undefined && updates.serial_clean === undefined) {
-              updates.serial_clean = (updates.serial_raw.match(/[A-Z0-9]{4,}/i)?.[0] ?? "").trim();
+              updates.serial_clean = (updates.serial_raw.match(/[A-Z0-9]{4,}/i)?.[0] ?? "").trim().toUpperCase();
             }
 
             const allowed = ["name", "serial_raw", "serial_clean", "condition", "mvd", "note", "battery", "coverage"];
@@ -2464,7 +2502,7 @@ app.post("/api/external/mark-posted", async (req, res) => {
 
   try {
     const { rows } = await db.execute({
-      sql: "SELECT * FROM items WHERE (serial_clean = ? OR serial_raw = ?) AND is_deleted = 0 LIMIT 1",
+      sql: "SELECT * FROM items WHERE (LOWER(serial_clean) = LOWER(?) OR serial_raw = ?) AND is_deleted = 0 LIMIT 1",
       args: [serial, serial]
     });
     const item = rows[0];
@@ -2522,7 +2560,7 @@ app.post("/api/items/batch-posted", requireAuth, async (req, res) => {
     for (const sn of serials) {
       // Tìm máy theo serial_clean hoặc serial_raw
       const { rows } = await db.execute({
-        sql: "SELECT id, is_posted FROM items WHERE (serial_clean = ? OR serial_raw = ?) AND is_deleted = 0",
+        sql: "SELECT id, is_posted FROM items WHERE (LOWER(serial_clean) = LOWER(?) OR serial_raw = ?) AND is_deleted = 0",
         args: [sn, sn]
       });
 
