@@ -20,7 +20,9 @@ jobs:
 
       - name: Build & deploy
         env:
-          ENV_FILE: /volume2/docker/barcode-wms/.env
+          # runner chạy trong container; .env phải ở path container thấy được.
+          # /tmp/runner-work = host /volume2/docker/gh-runner (đã mount).
+          ENV_FILE: /tmp/runner-work/.env
         run: bash scripts/deploy.sh
 
       - name: Smoke test (login.html qua container)
