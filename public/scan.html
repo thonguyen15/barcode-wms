@@ -256,7 +256,11 @@
           sEl.style.display = "block";
           setTimeout(() => sEl.style.display = "none", 3000);
         }
-        else { flashError(); document.getElementById("scanErr").textContent = "Lỗi thêm kiểm kê"; }
+        else {
+          const addJ = await addRes.json().catch(() => ({}));
+          flashError();
+          document.getElementById("scanErr").textContent = addJ.error || "Lỗi thêm kiểm kê";
+        }
       } else {
         const statusMap = { SHIP: "SHIPPED", RETURN: "RETURN" };
         const toStatus = statusMap[MODE];
@@ -275,8 +279,9 @@
           sEl.style.display = "block";
           setTimeout(() => sEl.style.display = "none", 3000);
         } else {
+          const upJ = await updateRes.json().catch(() => ({}));
           flashError();
-          document.getElementById("scanErr").textContent = "Lỗi cập nhật trạng thái";
+          document.getElementById("scanErr").textContent = upJ.error || "Lỗi cập nhật trạng thái";
         }
       }
     }

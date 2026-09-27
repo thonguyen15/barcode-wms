@@ -2047,14 +2047,20 @@ app.get("/api/scan/:token", requireAuth, async (req, res) => {
   const { token } = req.params;
   const { rows } = await db.execute({ sql: "SELECT * FROM items WHERE token = ?", args: [token] });
   const item = rows[0];
-  if (!item) return res.status(404).json({ error: "Not found" });
+  if (!item) {
+    console.warn(`[SCAN-REJECT] user=${req.user} token="${token}" không tồn tại (QR cũ hoặc sai mã)`);
+    return res.status(404).json({ error: "Not found" });
+  }
   res.json({ item });
 });
 
 // ====== Inventory work ======
 app.post("/api/inventory/add", requireAuth, requireStaff, async (req, res) => {
   const { token, serial } = req.body || {};
-  if (!token && !serial) return res.status(400).json({ error: "Thiếu token hoặc serial" });
+  if (!token && !serial) {
+    console.warn(`[SCAN-REJECT] user=${req.user} thiếu token/serial`);
+    return res.status(400).json({ error: "Thiếu token hoặc serial" });
+  }
 
   let item;
   if (token) {
@@ -2068,6 +2074,7 @@ app.post("/api/inventory/add", requireAuth, requireStaff, async (req, res) => {
       args: [cleanSerial, cleanSerial, cleanSerial]
     });
     if (itemRows.length === 0) {
+      console.warn(`[SCAN-REJECT] user=${req.user} serial="${serial}" không tìm thấy sản phẩm`);
       return res.status(404).json({ error: "Không tìm thấy sản phẩm" });
     }
     
@@ -2080,19 +2087,28 @@ app.post("/api/inventory/add", requireAuth, requireStaff, async (req, res) => {
     }
   }
 
-  if (!item) return res.status(404).json({ error: "Không tìm thấy sản phẩm" });
+  if (!item) {
+    console.warn(`[SCAN-REJECT] user=${req.user} token="${token}" không tìm thấy sản phẩm`);
+    return res.status(404).json({ error: "Không tìm thấy sản phẩm" });
+  }
   if (item.is_deleted === 1 || item.status === "DELETED") {
+    console.warn(`[SCAN-REJECT] user=${req.user} ${item.package_id} đã bị xóa`);
     return res.status(400).json({ error: "Sản phẩm đã bị xóa" });
   }
   if (item.status === "SHIPPED") {
+    console.warn(`[SCAN-REJECT] user=${req.user} ${item.package_id} đã giao, không thể kiểm kho lại`);
     return res.status(400).json({ error: `Hàng đã giao (${item.package_id}), không thể kiểm kho lại.` });
   }
 
   const date_key = yyyymmddLocal();
   const scanned_at = nowISO();
 
+  // Lưu ý: nếu lỗi giữa chừng (vd UNIQUE khi scan trùng) mà không rollback thì
+  // transaction ghi bị treo giữ lock SQLite -> mọi ghi sau đó dính SQLITE_BUSY
+  // "database is locked" cho tới khi restart server. Bắt buộc rollback trong catch.
+  let tx;
   try {
-    const tx = await db.transaction("write");
+    tx = await db.transaction("write");
 
     // 1. Thêm vào bảng công việc kiểm kê ngày hôm nay
     await tx.execute({
@@ -2128,9 +2144,12 @@ app.post("/api/inventory/add", requireAuth, requireStaff, async (req, res) => {
     await tx.commit();
     res.json({ ok: true, item });
   } catch (e) {
+    if (tx) { try { await tx.rollback(); } catch { /* tx đã đóng */ } }
     if (e.message && e.message.includes("UNIQUE constraint failed")) {
+      console.warn(`[SCAN-REJECT] user=${req.user} ${item.package_id} đã được kiểm kê hôm nay (scan trùng)`);
       return res.status(400).json({ error: `Sản phẩm "${item.name}" đã được kiểm kê hôm nay rồi.`, item });
     }
+    console.error(`[SCAN-ERROR] user=${req.user} ${item.package_id}:`, e.message);
     res.status(500).json({ error: e.message || "DB error" });
   }
 });
@@ -2190,8 +2209,9 @@ app.post("/api/inventory/reset", requireAuth, requireSuperAdmin, async (req, res
 app.post("/api/inventory/export", requireAuth, requireStaff, async (req, res) => {
   const date_key = yyyymmddLocal();
 
+  let tx;
   try {
-    const tx = await db.transaction("write");
+    tx = await db.transaction("write");
 
     // 1. Lấy hàng đã quét hôm nay (kèm category)
     const { rows: scanned } = await tx.execute({
@@ -2271,6 +2291,8 @@ app.post("/api/inventory/export", requireAuth, requireStaff, async (req, res) =>
       .catch(e => console.error("Telegram inventory export notify failed:", e));
 
   } catch (e) {
+    if (tx) { try { await tx.rollback(); } catch { /* tx đã đóng */ } }
+    console.error("[EXPORT-ERROR]", e.message);
     res.status(500).json({ error: "Export failed" });
   }
 });
@@ -2298,8 +2320,12 @@ app.post("/api/items/:id/status", requireAuth, requireStaff, async (req, res) =>
   const { rows } = await db.execute({ sql: "SELECT * FROM items WHERE id = ?", args: [id] });
   const item = rows[0];
 
-  if (!item) return res.status(404).json({ error: "Not found" });
+  if (!item) {
+    console.warn(`[STATUS-REJECT] user=${req.user} item=${id} không tồn tại`);
+    return res.status(404).json({ error: "Not found" });
+  }
   if (item.is_deleted === 1 || item.status === "DELETED") {
+    console.warn(`[STATUS-REJECT] user=${req.user} ${item.package_id} đã bị xóa, không đổi được trạng thái`);
     return res.status(400).json({ error: "Item is deleted" });
   }
 
@@ -3075,9 +3101,10 @@ app.delete("/api/categories/:id", requireAuth, requireAdmin, async (req, res) =>
 });
 
 app.post("/api/categories/reclassify", requireAuth, requireAdmin, async (req, res) => {
+  let tx;
   try {
     const { rows: items } = await db.execute("SELECT id, name FROM items WHERE is_deleted = 0");
-    const tx = await db.transaction("write");
+    tx = await db.transaction("write");
 
     for (const item of items) {
       const cat = detectCategory(item.name);
@@ -3090,6 +3117,7 @@ app.post("/api/categories/reclassify", requireAuth, requireAdmin, async (req, re
     await tx.commit();
     res.json({ ok: true, count: items.length });
   } catch (e) {
+    if (tx) { try { await tx.rollback(); } catch { /* tx đã đóng */ } }
     res.status(500).json({ error: e.message });
   }
 });
