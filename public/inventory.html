@@ -11,6 +11,7 @@
     <div class="nav">
       <a href="/create.html" id="navCreate">Create</a>
       <a href="/list.html" id="navList">List</a>
+      <a href="/reconcile.html" id="navReconcile" style="display:none">Đối chiếu</a>
       <a href="/scan.html" id="navScan">Scan</a>
       <a href="/inventory.html" id="navInventory" class="active">Inventory</a>
       <a href="/settings.html" id="navSettings" style="display:none">Settings</a>
@@ -23,7 +24,6 @@
     <div class="row" style="gap:10px; margin-bottom:16px">
       <button onclick="load()" style="background:var(--primary); color:white">Làm mới</button>
       <button onclick="testTelegram()" style="background:white; color:var(--text); border:1.5px solid var(--border)">Test Telegram 🚀</button>
-      <button onclick="notifyStale()" style="background:#fff7ed; color:#c2410c; border:1.5px solid #fed7aa">Báo cáo tồn >15 ngày ⚠️</button>
     </div>
     
     <div id="status" style="font-size:13px; color:var(--muted); font-weight:500">
@@ -50,8 +50,11 @@ async function logout(){ await fetch("/api/logout",{method:"POST"}); location.hr
 
 async function checkAuth() {
   const r = await fetch("/api/me"); const j = await r.json();
-  if (j.role === 'admin' && j.user === 'tho') {
-    document.getElementById("navSettings").style.display = "inline-block";
+  if (j.role === 'admin') {
+    document.getElementById("navReconcile").style.display = "inline-block";
+    if (j.user === 'tho') {
+      document.getElementById("navSettings").style.display = "inline-block";
+    }
   } else if (j.role === 'entry') {
     document.getElementById("navCreate").style.display = "none";
     document.getElementById("navScan").style.display = "none";
@@ -66,13 +69,6 @@ function setStatus(msg){ document.getElementById("status").textContent = "Trạn
 async function testTelegram() {
   if(!confirm("Gửi tin nhắn thử đến Telegram?")) return;
   const r = await fetch("/api/telegram/test", { method: "POST" });
-  const j = await r.json();
-  alert(j.message || j.error);
-}
-
-async function notifyStale() {
-  if(!confirm("Gửi báo cáo hàng tồn lâu ngày (>15d) qua Telegram?")) return;
-  const r = await fetch("/api/telegram/notify-stale-manual", { method: "POST" });
   const j = await r.json();
   alert(j.message || j.error);
 }

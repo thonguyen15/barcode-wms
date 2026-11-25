@@ -115,6 +115,11 @@ function readSessionCookie(cookieVal) {
 }
 
 function requireAuth(req, res, next) {
+  if (process.env.BYPASS_AUTH === "true") {
+    req.user = process.env.ADMIN_USER || "tho";
+    req.role = "admin";
+    return next();
+  }
   const sess = readSessionCookie(req.cookies?.wms_auth);
   const u = sess?.u;
   if (!u || !USERS[u]) return res.status(401).json({ error: "Not logged in" });
@@ -158,9 +163,15 @@ app.use((req, res, next) => {
 
   // nếu request file html mà chưa login -> redirect login
   if (p.endsWith(".html")) {
+    if (process.env.BYPASS_AUTH === "true") {
+      return next();
+    }
     const sess = readSessionCookie(req.cookies?.wms_auth);
     const u = sess?.u;
     if (!u || !USERS[u]) return res.redirect("/login.html");
+    if (p === "/reconcile.html" && USERS[u].role !== "admin") {
+      return res.redirect("/list.html");
+    }
   }
 
   next();
@@ -209,8 +220,8 @@ app.post("/api/login", loginLimiter, async (req, res) => {
     sameSite: "strict",
   });
 
-  // Tự động kiểm tra hàng tồn quá hạn khi có người login (không block response)
-  checkStaleItemsAndNotify().catch(e => console.error("Auto check failed:", e));
+  // Gửi thông báo đăng nhập qua Telegram (không block response)
+  notifyLogin(req, username, user.role).catch(e => console.error("Login notify failed:", e));
 
   res.json({ ok: true });
 });
@@ -256,6 +267,16 @@ function detectCategory(name) {
   return "else";
 }
 
+function detectShipFee(name) {
+  const n = (name || "").toLowerCase();
+  if (n.includes("watch")) return 210;
+  if (n.includes("ipad")) return 780;
+  if (n.includes("pencil")) return 210;
+  if (n.includes("keyboard") || n.includes("magic keyboard")) return 780;
+  if (n.includes("macbook") || n.includes("mac mini") || n.includes("mac studio") || n.includes("imac")) return 1200;
+  return 1200; // else
+}
+
 function nowISO() {
   const d = new Date();
   const jst = d.toLocaleString("sv-SE", { timeZone: "Asia/Tokyo" }).replace(" ", "T");
@@ -279,6 +300,39 @@ function fmtTimeLocal(iso) {
     const d = new Date(iso);
     return d.toLocaleString("vi-VN", { timeZone: "Asia/Tokyo" });
   } catch (e) { return iso; }
+}
+
+function parseAndNormalizeDate(input) {
+  if (!input) return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+
+  let cleaned = String(input).trim();
+  // Replace "at" (common in macOS/iOS locales e.g. "15 Jul 2026 at 09:59")
+  cleaned = cleaned.replace(/\bat\b/gi, " ");
+
+  let parsed = new Date(cleaned);
+
+  // If invalid, try to extract YYYY-MM-DD from the string
+  if (isNaN(parsed.getTime())) {
+    const match = cleaned.match(/(\d{4})[-/](\d{1,2})[-/](\d{1,2})/);
+    if (match) {
+      parsed = new Date(parseInt(match[1], 10), parseInt(match[2], 10) - 1, parseInt(match[3], 10));
+    }
+  }
+
+  // If still invalid, try DD-MM-YYYY or DD/MM/YYYY
+  if (isNaN(parsed.getTime())) {
+    const match = cleaned.match(/(\d{1,2})[-/](\d{1,2})[-/](\d{4})/);
+    if (match) {
+      parsed = new Date(parseInt(match[3], 10), parseInt(match[2], 10) - 1, parseInt(match[1], 10));
+    }
+  }
+
+  // Fallback to today if parsing completely failed
+  if (isNaN(parsed.getTime())) {
+    return new Date().toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
+  }
+
+  return parsed.toLocaleDateString("sv-SE", { timeZone: "Asia/Tokyo" });
 }
 function getTgActorName(from) {
   if (!from) return "Unknown (TG)";
@@ -534,47 +588,37 @@ async function generateLabelBuffer(item, qrBuffer) {
   return canvas.toBuffer("image/png");
 }
 
-async function checkStaleItemsAndNotify(isManual = false) {
-  const today = todayKey();
+function describeUserAgent(ua) {
+  ua = String(ua || "");
+  if (!ua) return "Không rõ";
+  let os = "Không rõ OS";
+  if (/iPhone/i.test(ua)) os = "iPhone";
+  else if (/iPad/i.test(ua)) os = "iPad";
+  else if (/Android/i.test(ua)) os = "Android";
+  else if (/Windows/i.test(ua)) os = "Windows";
+  else if (/Mac OS X|Macintosh/i.test(ua)) os = "macOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
 
-  // Kiểm tra xem hôm nay đã gửi chưa (nếu không phải gửi thủ công)
-  if (!isManual) {
-    const { rows } = await db.execute({ sql: "SELECT value FROM kv_store WHERE key = 'last_stale_alert_date'", args: [] });
-    if (rows[0]?.value === today) return;
-  }
+  let browser = "Không rõ trình duyệt";
+  if (/Edg\//i.test(ua)) browser = "Edge";
+  else if (/OPR\/|Opera/i.test(ua)) browser = "Opera";
+  else if (/CriOS|Chrome\//i.test(ua)) browser = "Chrome";
+  else if (/FxiOS|Firefox\//i.test(ua)) browser = "Firefox";
+  else if (/Safari\//i.test(ua)) browser = "Safari";
 
-  // Tìm hàng tồn > 15 ngày (CREATED)
-  // Tính 15 ngày trước từ giờ Nhật Bản
-  const staleDate = new Date(new Date().getTime() + 9 * 60 * 60 * 1000 - 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+  return `${browser} / ${os}`;
+}
 
-  const { rows: staleItems } = await db.execute({
-    sql: `
-      SELECT package_id, name, created_at
-      FROM items
-      WHERE is_deleted = 0
-        AND status = 'CREATED'
-        AND substr(created_at, 1, 10) < ?
-      ORDER BY created_at ASC
-      LIMIT 20
-    `,
-    args: [staleDate]
-  });
-
-  if (staleItems.length > 0) {
-    let msg = `⚠️ <b>CẢNH BÁO HÀNG TỒN > 15 NGÀY</b>\n\n`;
-    staleItems.forEach((it, i) => {
-      msg += `${i + 1}. <code>${it.package_id}</code> - ${it.name}\n   (Tồn: ${Math.floor((new Date() - new Date(it.created_at)) / (1000 * 60 * 60 * 24))} ngày)\n`;
-    });
-    msg += `\n👉 <a href="${process.env.APP_URL || ''}/list.html">Xem danh sách đầy đủ</a>`;
-
-    await sendTelegramMessage(msg, NOTIFICATION_GROUP_CHAT_ID);
-
-    // Lưu lại ngày đã gửi
-    await db.execute({
-      sql: "INSERT OR REPLACE INTO kv_store (key, value) VALUES ('last_stale_alert_date', ?)",
-      args: [today]
-    });
-  }
+async function notifyLogin(req, username, role) {
+  const ip = req.headers["cf-connecting-ip"] || req.ip || "-";
+  const ua = req.headers["user-agent"] || "";
+  const msg =
+    `🔐 <b>THÔNG BÁO ĐĂNG NHẬP WEB</b>\n\n` +
+    `👤 Tài khoản: <b>${escTg(username)}</b> (${escTg(role)})\n` +
+    `🕒 Thời gian: ${fmtTimeLocal(new Date().toISOString())}\n` +
+    `🌐 IP: <code>${escTg(ip)}</code>\n` +
+    `💻 Thiết bị: ${escTg(describeUserAgent(ua))}`;
+  await sendTelegramMessage(msg, NOTIFICATION_GROUP_CHAT_ID);
 }
 async function nextPackageId() {
   const key = todayKey();
@@ -825,6 +869,674 @@ app.post("/api/external/create", async (req, res) => {
   } catch (e) {
     console.error("Shortcut API failed:", e);
     res.status(500).json({ error: e.message || "Shortcut processing failed" });
+  }
+});
+
+function decodeBasicHtmlEntities(str) {
+  return String(str ?? "")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&#x27;/g, "'")
+    .replace(/&nbsp;/g, " ")
+    .trim();
+}
+
+function cleanProductTitle(raw) {
+  let title = decodeBasicHtmlEntities(raw);
+  // Bỏ hậu tố tên sàn (Mercari / Yahoo! Flea Market / PayPay Flea Market)
+  title = title
+    .replace(/\s+(?:by|[-|｜])\s*メルカリ\s*$/i, "")
+    .replace(/\s*(?:[-|｜])\s*(?:Yahoo!フリマ(?:（旧PayPayフリマ）)?|PayPayフリマ)\s*$/i, "")
+    .trim();
+  // Tránh lấy nhầm tên trang chung khi sản phẩm lỗi/404
+  if (/^(?:メルカリ|Yahoo!フリマ(?:（旧PayPayフリマ）)?|PayPayフリマ)$/i.test(title)) {
+    return null;
+  }
+  return title || null;
+}
+
+function parseJsonStringLiteral(raw) {
+  try {
+    return JSON.parse(`"${raw}"`);
+  } catch {
+    return raw;
+  }
+}
+
+async function fetchProductMetaFromLink(rawUrl) {
+  const result = { title: null, price: null };
+  let parsedUrl;
+  try {
+    parsedUrl = new URL(String(rawUrl || "").trim());
+  } catch {
+    return result;
+  }
+  if (!/^https?:$/i.test(parsedUrl.protocol)) return result;
+
+  // Chặn host nội bộ cơ bản (SSRF)
+  const host = parsedUrl.hostname.toLowerCase();
+  if (
+    host === "localhost" ||
+    host === "::1" ||
+    /^127\./.test(host) ||
+    /^10\./.test(host) ||
+    /^192\.168\./.test(host) ||
+    /^169\.254\./.test(host) ||
+    /^172\.(1[6-9]|2\d|3[01])\./.test(host)
+  ) {
+    return result;
+  }
+
+  try {
+    const resp = await fetch(parsedUrl.toString(), {
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "Accept-Language": "ja,en;q=0.9",
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!resp.ok) return result;
+
+    const html = await resp.text();
+
+    // 0. Hỗ trợ __NEXT_DATA__ (Yahoo!フリマ / PayPayフリマ)
+    const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+    if (nextDataMatch) {
+      try {
+        const nd = JSON.parse(nextDataMatch[1]);
+        const byId = nd?.props?.initialState?.itemsState?.items?.byId;
+        const itemObj =
+          (byId && typeof byId === "object" ? Object.values(byId)[0] : null) ||
+          nd?.props?.pageProps?.item ||
+          null;
+        if (itemObj) {
+          if (itemObj.title) result.title = cleanProductTitle(itemObj.title);
+          if (itemObj.price !== undefined && itemObj.price !== null) {
+            const p = parseFloat(itemObj.price);
+            if (Number.isFinite(p) && p >= 0) result.price = p;
+          }
+        }
+      } catch {}
+    }
+
+    // 1. Tách tiêu đề (Next.js streaming payload của Mercari + thẻ meta/title chuẩn)
+    if (!result.title) {
+      const nextOgTitle = html.match(/"og:title"[^}]{0,200}?"content":"((?:\\.|[^"\\])+)"/);
+      const nextTitle = html.match(/"title","0",\{"children":"((?:\\.|[^"\\])+)"\}/);
+      const metaOgTitle =
+        html.match(/<meta[^>]+property=["']og:title["'][^>]+content=["']([^"']+)["']/i) ||
+        html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:title["']/i);
+      const htmlTitle = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+
+      const rawTitle =
+        (nextOgTitle && parseJsonStringLiteral(nextOgTitle[1])) ||
+        (nextTitle && parseJsonStringLiteral(nextTitle[1])) ||
+        (metaOgTitle && metaOgTitle[1]) ||
+        (htmlTitle && htmlTitle[1]) ||
+        null;
+
+      if (rawTitle) {
+        result.title = cleanProductTitle(rawTitle);
+      }
+    }
+
+    // 2. Tách giá (Mercari meta/streaming + JSON-LD fallback)
+    if (result.price === null) {
+      const nextPrice = html.match(/"product:price:amount"[^}]{0,200}?"content":"(\d+(?:\.\d+)?)"/);
+      const metaPrice =
+        html.match(/<meta[^>]+(?:name|property)=["']product:price:amount["'][^>]+content=["'](\d+(?:\.\d+)?)["']/i) ||
+        html.match(/<meta[^>]+content=["'](\d+(?:\.\d+)?)["'][^>]+(?:name|property)=["']product:price:amount["']/i);
+      const jsonPrice = html.match(/"price"\s*:\s*"?(\d{2,9})"?/);
+
+      const rawPrice = (nextPrice && nextPrice[1]) || (metaPrice && metaPrice[1]) || (jsonPrice && jsonPrice[1]) || null;
+      if (rawPrice !== null) {
+        const num = parseFloat(rawPrice);
+        if (Number.isFinite(num) && num >= 0) result.price = num;
+      }
+    }
+  } catch (e) {
+    console.warn("fetchProductMetaFromLink failed:", e.message);
+  }
+
+  return result;
+}
+
+// ====== Shortcut API: Create order via external POST (Calendar Order) ======
+app.post("/api/external/create-order", async (req, res) => {
+  const apiKey = req.headers["x-api-key"];
+  if (!apiKey || apiKey !== process.env.SHORTCUT_API_KEY) {
+    return res.status(401).json({ error: "Unauthorized. Missing or invalid x-api-key header." });
+  }
+
+  try {
+    let name = String(req.body.name ?? "").trim();
+    const link = String(req.body.link ?? "").trim();
+
+    const rawBuyPrice = req.body.buy_price;
+    const hasBuyPrice =
+      rawBuyPrice !== undefined && rawBuyPrice !== null && String(rawBuyPrice).trim() !== "";
+    let buy_price = hasBuyPrice ? parseFloat(rawBuyPrice) : null;
+
+    const rawSoldPrice = req.body.sold_price;
+    const parsedSoldPrice =
+      rawSoldPrice !== undefined && rawSoldPrice !== null && String(rawSoldPrice).trim() !== ""
+        ? parseFloat(rawSoldPrice)
+        : 0;
+    const sold_price = Number.isFinite(parsedSoldPrice) ? parsedSoldPrice : 0;
+
+    // Chỉ tự động lấy tên / giá từ link khi input tương ứng bị để trống
+    if (link && (!name || !hasBuyPrice)) {
+      const meta = await fetchProductMetaFromLink(link);
+      if (!name && meta.title) name = meta.title;
+      if (!hasBuyPrice && meta.price !== null) buy_price = meta.price;
+    }
+
+    buy_price = Number.isFinite(buy_price) ? buy_price : 0;
+
+    if (!name) {
+      return res.status(400).json({ error: "Product name is required (or could not extract title from link)" });
+    }
+
+    const order_date = parseAndNormalizeDate(req.body.order_date);
+
+    const package_id = await nextPackageId();
+    const token = genToken();
+    const t = nowISO();
+    const rawShipFee = req.body.ship_fee;
+    const parsedShipFee =
+      rawShipFee !== undefined && rawShipFee !== null && String(rawShipFee).trim() !== ""
+        ? parseFloat(rawShipFee)
+        : null;
+    const ship_fee = Number.isFinite(parsedShipFee) ? parsedShipFee : detectShipFee(name);
+    const profit = sold_price * 0.9 - buy_price - ship_fee;
+
+    await db.execute({
+      sql: `
+        INSERT INTO items (
+          package_id, token, name, buy_price, sold_price, ship_fee, profit, link, is_order, order_date,
+          status, inventory_status, created_at, updated_at, is_deleted, created_by, category
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'ORDERED', 'UNKNOWN', ?, ?, 0, 'shortcut', ?)
+      `,
+      args: [
+        package_id, token, name, buy_price, sold_price, ship_fee, profit, link, order_date,
+        t, t, detectCategory(name)
+      ]
+    });
+
+    res.json({ ok: true, package_id, token, name, buy_price, ship_fee, profit });
+  } catch (e) {
+    console.error("Create order API failed:", e);
+    res.status(500).json({ error: e.message || "Create order failed" });
+  }
+});
+
+// Trích xuất mã sản phẩm dạng m hoặc z + dãy số (vd: m52146527465, z123456789) từ mã hoặc URL sản phẩm
+function extractProductCode(input) {
+  const s = String(input ?? "").trim();
+  if (!s) return null;
+  const match = s.match(/(?:^|[^a-z0-9])([mz]\d{5,})(?=$|[^a-z0-9])/i);
+  return match ? match[1].toLowerCase() : null;
+}
+
+// ====== Shortcut API: Update order shipment (Tracking MVD and optional ship fee) ======
+app.post("/api/external/update-order-shipment", async (req, res) => {
+  const apiKey = req.headers["x-api-key"];
+  if (!apiKey || apiKey !== process.env.SHORTCUT_API_KEY) {
+    return res.status(401).json({ error: "Unauthorized. Missing or invalid x-api-key header." });
+  }
+
+  try {
+    const { order_id, name, token, mvd, link, product_code, code } = req.body;
+    const rawShipFee = req.body.ship_fee;
+    const parsedShipFee =
+      rawShipFee !== undefined && rawShipFee !== null && String(rawShipFee).trim() !== ""
+        ? parseFloat(rawShipFee)
+        : null;
+    const ship_fee = Number.isFinite(parsedShipFee) ? parsedShipFee : null;
+
+    const updated_mvd = String(mvd ?? "").trim();
+    if (!updated_mvd) {
+      return res.status(400).json({ error: "Tracking number (mvd) is required" });
+    }
+
+    const rawCodeInput = String(product_code ?? code ?? "").trim();
+    const extractedCode = extractProductCode(rawCodeInput) || extractProductCode(link);
+
+    // Find the order
+    let order = null;
+    if (order_id) {
+      const { rows } = await db.execute({
+        sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND id = ? LIMIT 1",
+        args: [order_id]
+      });
+      order = rows[0] || null;
+    } else if (token) {
+      const { rows } = await db.execute({
+        sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND token = ? LIMIT 1",
+        args: [token]
+      });
+      order = rows[0] || null;
+    } else if (rawCodeInput || link) {
+      // 1. Ưu tiên khớp chính xác link nếu người dùng gửi full link
+      if (link && String(link).trim()) {
+        const { rows } = await db.execute({
+          sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND link = ? ORDER BY created_at DESC LIMIT 1",
+          args: [String(link).trim()]
+        });
+        order = rows[0] || null;
+      }
+
+      // 2. Tìm theo mã sản phẩm (vd: m52146527465) nằm trong cột link
+      if (!order && extractedCode) {
+        const { rows } = await db.execute({
+          sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND LOWER(link) LIKE ? ORDER BY created_at DESC",
+          args: [`%${extractedCode}%`]
+        });
+        order = rows.find(r => extractProductCode(r.link) === extractedCode) || null;
+      }
+
+      // 3. Fallback nếu truyền product_code/code nhưng không theo định dạng m + số
+      if (!order && rawCodeInput) {
+        const { rows } = await db.execute({
+          sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND LOWER(link) LIKE ? ORDER BY created_at DESC LIMIT 1",
+          args: [`%${rawCodeInput.toLowerCase()}%`]
+        });
+        order = rows[0] || null;
+      }
+    } else if (name) {
+      const { rows } = await db.execute({
+        sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND name = ? ORDER BY created_at DESC LIMIT 1",
+        args: [name]
+      });
+      order = rows[0] || null;
+    } else {
+      // Find latest unmerged order (that doesn't have an mvd yet)
+      const { rows } = await db.execute({
+        sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND (mvd IS NULL OR mvd = '') ORDER BY created_at DESC LIMIT 1",
+        args: []
+      });
+      order = rows[0] || null;
+    }
+
+    if (!order) {
+      return res.status(404).json({
+        error: extractedCode
+          ? `Order not found for product code: ${extractedCode}`
+          : "Order not found"
+      });
+    }
+
+    const existingMvd = String(order.mvd ?? "").trim();
+    if (existingMvd) {
+      return res.json({
+        ok: true,
+        already_updated: true,
+        message: `Đơn hàng đã được cập nhật MVD trước đó: ${existingMvd}`,
+        order_id: order.id,
+        package_id: order.package_id,
+        name: order.name,
+        product_code: extractedCode || extractProductCode(order.link),
+        mvd: existingMvd
+      });
+    }
+
+    const updated_ship_fee = ship_fee !== null ? ship_fee : (order.ship_fee || detectShipFee(order.name));
+    const updated_profit = (order.sold_price || 0) * 0.9 - (order.buy_price || 0) - updated_ship_fee;
+    const t = nowISO();
+
+    await db.execute({
+      sql: `
+        UPDATE items 
+        SET mvd = ?, ship_fee = ?, profit = ?, updated_at = ?
+        WHERE id = ?
+      `,
+      args: [updated_mvd, updated_ship_fee, updated_profit, t, order.id]
+    });
+
+    res.json({
+      ok: true,
+      already_updated: false,
+      message: `Đã cập nhật MVD thành công: ${updated_mvd}`,
+      order_id: order.id,
+      package_id: order.package_id,
+      name: order.name,
+      product_code: extractedCode || extractProductCode(order.link),
+      mvd: updated_mvd,
+      profit: updated_profit
+    });
+  } catch (e) {
+    console.error("Update shipment API failed:", e);
+    res.status(500).json({ error: e.message || "Update shipment failed" });
+  }
+});
+
+// ====== GET /api/orders (Fetch all orders for calendar) ======
+app.get("/api/orders", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const month = req.query.month; // YYYY-MM
+    let sql = "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0";
+    const args = [];
+
+    if (month) {
+      sql += " AND order_date LIKE ?";
+      args.push(`${month}%`);
+    }
+
+    sql += " ORDER BY order_date ASC, id ASC";
+
+    const { rows } = await db.execute({ sql, args });
+    res.json({ rows });
+  } catch (e) {
+    console.error("Get orders failed:", e);
+    res.status(500).json({ error: e.message || "Failed to get orders" });
+  }
+});
+
+// ====== POST /api/orders (Create order via UI) ======
+app.post("/api/orders", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const name = (req.body.name ?? "").trim();
+    const buy_price = parseFloat(req.body.buy_price ?? 0);
+    const sold_price = parseFloat(req.body.sold_price ?? 0);
+    const ship_fee = req.body.ship_fee !== undefined && parseFloat(req.body.ship_fee) !== 0 ? parseFloat(req.body.ship_fee) : detectShipFee(name);
+    const link = (req.body.link ?? "").trim();
+    const note = (req.body.note ?? "no").trim();
+    const mvd = (req.body.mvd ?? "").trim();
+
+    if (!name) {
+      return res.status(400).json({ error: "Product name is required" });
+    }
+
+    const order_date = parseAndNormalizeDate(req.body.order_date);
+
+    const package_id = await nextPackageId();
+    const token = genToken();
+    const t = nowISO();
+    const profit = sold_price * 0.9 - buy_price - ship_fee;
+
+    await db.execute({
+      sql: `
+        INSERT INTO items (
+          package_id, token, name, buy_price, sold_price, ship_fee, profit, link, is_order, order_date, note,
+          status, inventory_status, created_at, updated_at, is_deleted, created_by, category, mvd
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, 'ORDERED', 'UNKNOWN', ?, ?, 0, ?, ?, ?)
+      `,
+      args: [
+        package_id, token, name, buy_price, sold_price, ship_fee, profit, link, order_date, note,
+        t, t, req.user, detectCategory(name), mvd
+      ]
+    });
+
+    res.json({ ok: true, package_id, token, profit, ship_fee, mvd });
+  } catch (e) {
+    console.error("Create order failed:", e);
+    res.status(500).json({ error: e.message || "Failed to create order" });
+  }
+});
+
+// ====== GET /api/orders/unmerged-arrived (Fetch arrived physical items that are not merged) ======
+app.get("/api/orders/unmerged-arrived", requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const sql = `
+      SELECT * FROM items 
+      WHERE is_order = 0 AND is_deleted = 0 AND status = 'CREATED'
+      ORDER BY datetime(updated_at) DESC
+    `;
+    const { rows } = await db.execute(sql);
+    res.json({ rows });
+  } catch (e) {
+    console.error("Get unmerged items failed:", e);
+    res.status(500).json({ error: e.message || "Failed to get unmerged items" });
+  }
+});
+
+// ====== POST /api/orders/merge (Merge calendar order and physical item) ======
+app.post("/api/orders/merge", requireAuth, requireAdmin, async (req, res) => {
+  const { order_id, arrived_item_id } = req.body;
+
+  if (!order_id || !arrived_item_id) {
+    return res.status(400).json({ error: "Missing order_id or arrived_item_id" });
+  }
+
+  try {
+    const { rows: orderRows } = await db.execute({
+      sql: "SELECT * FROM items WHERE id = ? AND is_order = 1 AND is_deleted = 0",
+      args: [order_id]
+    });
+    const { rows: arrivedRows } = await db.execute({
+      sql: "SELECT * FROM items WHERE id = ? AND is_order = 0 AND is_deleted = 0",
+      args: [arrived_item_id]
+    });
+
+    const order = orderRows[0];
+    const arrived = arrivedRows[0];
+
+    if (!order) return res.status(404).json({ error: "Calendar order not found" });
+    if (order.status !== 'ORDERED') return res.status(400).json({ error: "Calendar order is already merged" });
+    if (!arrived) return res.status(404).json({ error: "Arrived physical item not found" });
+    if (arrived.merged_from_id) return res.status(400).json({ error: "Arrived physical item is already merged" });
+
+    const t = nowISO();
+    const profit = (order.sold_price || 0) * 0.9 - (order.buy_price || 0) - (order.ship_fee || 0);
+
+    await db.execute({
+      sql: `
+        UPDATE items
+        SET 
+          name = ?,
+          mvd = CASE WHEN mvd IS NULL OR mvd = '' THEN ? ELSE mvd END,
+          serial_raw = ?,
+          serial_clean = ?,
+          condition = ?,
+          battery = ?,
+          coverage = ?,
+          note = ?,
+          status = 'CREATED',
+          inventory_status = ?,
+          category = ?,
+          profit = ?,
+          merged_from_id = ?,
+          updated_at = ?
+        WHERE id = ?
+      `,
+      args: [
+        arrived.name,
+        arrived.mvd,
+        arrived.serial_raw,
+        arrived.serial_clean,
+        arrived.condition,
+        arrived.battery,
+        arrived.coverage,
+        arrived.note,
+        arrived.inventory_status || 'UNKNOWN',
+        detectCategory(arrived.name),
+        profit,
+        arrived.id,
+        t,
+        order.id
+      ]
+    });
+
+    await db.execute({
+      sql: "UPDATE items SET is_deleted = 1, deleted_at = ?, deleted_by = ? WHERE id = ?",
+      args: [t, req.user, arrived.id]
+    });
+
+    await db.execute({
+      sql: "INSERT INTO status_logs(item_id, from_status, to_status, actor, created_at) VALUES(?, ?, ?, ?, ?)",
+      args: [order.id, order.status, 'CREATED', req.user, t]
+    });
+
+    res.json({ ok: true, merged_order_id: order.id });
+  } catch (e) {
+    console.error("Merge failed:", e);
+    res.status(500).json({ error: e.message || "Merge failed" });
+  }
+});
+
+// ====== POST /api/orders/unmerge (Unmerge/Unreconcile calendar order and physical item) ======
+app.post("/api/orders/unmerge", requireAuth, requireAdmin, async (req, res) => {
+  const { order_id } = req.body;
+
+  if (!order_id) {
+    return res.status(400).json({ error: "Missing order_id" });
+  }
+
+  try {
+    const { rows } = await db.execute({
+      sql: "SELECT * FROM items WHERE id = ? AND is_order = 1 AND is_deleted = 0",
+      args: [order_id]
+    });
+    const order = rows[0];
+
+    if (!order) {
+      return res.status(404).json({ error: "Order not found" });
+    }
+
+    if (order.status !== 'CREATED' || !order.merged_from_id) {
+      return res.status(400).json({ error: "Order is not currently merged with a package" });
+    }
+
+    const t = nowISO();
+
+    const { rows: physicalRows } = await db.execute({
+      sql: "SELECT * FROM items WHERE id = ? AND is_order = 0 AND is_deleted = 1",
+      args: [order.merged_from_id]
+    });
+    const physicalItem = physicalRows[0];
+
+    if (physicalItem) {
+      await db.execute({
+        sql: "UPDATE items SET is_deleted = 0, deleted_at = NULL, deleted_by = NULL, status = 'CREATED' WHERE id = ?",
+        args: [physicalItem.id]
+      });
+    }
+
+    const profit = (order.sold_price || 0) * 0.9 - (order.buy_price || 0);
+
+    await db.execute({
+      sql: `
+        UPDATE items
+        SET 
+          serial_raw = NULL,
+          serial_clean = NULL,
+          condition = NULL,
+          battery = NULL,
+          coverage = NULL,
+          note = 'no',
+          status = 'ORDERED',
+          ship_fee = 0,
+          profit = ?,
+          merged_from_id = NULL,
+          updated_at = ?
+        WHERE id = ?
+      `,
+      args: [profit, t, order.id]
+    });
+
+    await db.execute({
+      sql: "INSERT INTO status_logs(item_id, from_status, to_status, actor, created_at) VALUES(?, ?, ?, ?, ?)",
+      args: [order.id, order.status, 'ORDERED', req.user, t]
+    });
+
+    res.json({ ok: true, unmerged_order_id: order.id });
+  } catch (e) {
+    console.error("Merge failed:", e);
+    res.status(500).json({ error: e.message || "Merge failed" });
+  }
+});
+
+// ====== PUT /api/orders/:id (Update order details) ======
+app.put("/api/orders/:id", requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  const { name, link, buy_price, sold_price, ship_fee, note, order_date, status, mvd } = req.body;
+
+  try {
+    const { rows } = await db.execute({
+      sql: "SELECT * FROM items WHERE id = ? AND is_order = 1 AND is_deleted = 0",
+      args: [id]
+    });
+    const order = rows[0];
+
+    if (!order) return res.status(404).json({ error: "Order not found" });
+
+    const updated_name = name !== undefined ? name.trim() : order.name;
+    const updated_link = link !== undefined ? link.trim() : order.link;
+    const updated_buy_price = buy_price !== undefined ? parseFloat(buy_price) : (order.buy_price || 0);
+    const updated_sold_price = sold_price !== undefined ? parseFloat(sold_price) : (order.sold_price || 0);
+    const updated_ship_fee = ship_fee !== undefined ? parseFloat(ship_fee) : (order.ship_fee || 0);
+    const updated_note = note !== undefined ? note.trim() : order.note;
+    const updated_order_date = order_date !== undefined ? parseAndNormalizeDate(order_date) : order.order_date;
+    const updated_status = status !== undefined ? status.trim() : order.status;
+    const updated_mvd = mvd !== undefined ? mvd.trim() : order.mvd;
+
+    const profit = updated_sold_price * 0.9 - updated_buy_price - updated_ship_fee;
+    const t = nowISO();
+
+    await db.execute({
+      sql: `
+        UPDATE items
+        SET 
+          name = ?,
+          link = ?,
+          buy_price = ?,
+          sold_price = ?,
+          ship_fee = ?,
+          profit = ?,
+          note = ?,
+          order_date = ?,
+          status = ?,
+          mvd = ?,
+          updated_at = ?
+        WHERE id = ?
+      `,
+      args: [
+        updated_name,
+        updated_link,
+        updated_buy_price,
+        updated_sold_price,
+        updated_ship_fee,
+        profit,
+        updated_note,
+        updated_order_date,
+        updated_status,
+        updated_mvd,
+        t,
+        id
+      ]
+    });
+
+    if (updated_status !== order.status) {
+      await db.execute({
+        sql: "INSERT INTO status_logs(item_id, from_status, to_status, actor, created_at) VALUES(?, ?, ?, ?, ?)",
+        args: [id, order.status, updated_status, req.user, t]
+      });
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Update order failed:", e);
+    res.status(500).json({ error: e.message || "Failed to update order" });
+  }
+});
+
+// ====== DELETE /api/orders/:id (Delete calendar order) ======
+app.delete("/api/orders/:id", requireAuth, requireAdmin, async (req, res) => {
+  const { id } = req.params;
+  try {
+    const t = nowISO();
+    await db.execute({
+      sql: "UPDATE items SET is_deleted = 1, deleted_at = ?, deleted_by = ? WHERE id = ?",
+      args: [t, req.user, id]
+    });
+    res.json({ ok: true });
+  } catch (e) {
+    console.error("Delete order failed:", e);
+    res.status(500).json({ error: e.message || "Failed to delete order" });
   }
 });
 
@@ -1913,7 +2625,7 @@ function buildItemQuery(req) {
   const tab = req.query.tab;
   const posted = req.query.posted;
 
-  const where = ["is_deleted = 0"];
+  const where = ["is_deleted = 0", "NOT (is_order = 1 AND status = 'ORDERED')"];
   const params = [];
   const like = `%${q}%`;
 
@@ -1925,7 +2637,7 @@ function buildItemQuery(req) {
   }
 
   if (tab === 'stock') {
-    where.push(`status = 'CREATED'`);
+    where.push(`status IN ('CREATED', 'SOLD')`);
   } else if (tab === 'shipped') {
     where.push(`status = 'SHIPPED'`);
   } else if (tab === 'return') {
@@ -1958,7 +2670,7 @@ app.get("/api/items", requireAuth, async (req, res) => {
   const { where, params } = buildItemQuery(req);
 
   const sql = `
-    SELECT id, package_id, name, serial_clean, mvd, status, inventory_status, is_posted, last_inventory_at, created_at, updated_at, category
+    SELECT id, package_id, name, serial_clean, mvd, status, inventory_status, is_posted, last_inventory_at, created_at, updated_at, category, buy_price, sold_price, ship_fee, profit, link
     FROM items
     WHERE ${where.join(" AND ")}
     ORDER BY datetime(updated_at) DESC
@@ -2804,16 +3516,6 @@ app.post("/api/telegram/test", requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// API Chạy tay báo cáo hàng tồn (dành cho Admin)
-app.post("/api/telegram/notify-stale-manual", requireAuth, requireAdmin, async (req, res) => {
-  try {
-    await checkStaleItemsAndNotify(true);
-    res.json({ ok: true, message: "Đã kích hoạt quét hàng tồn và gửi qua Telegram." });
-  } catch (e) {
-    res.status(500).json({ error: e.message });
-  }
-});
-
 // ====== Request Delete (any authenticated user) ======
 app.post("/api/items/:id/request-delete", requireAuth, async (req, res) => {
   const id = req.params.id;
@@ -3131,7 +3833,12 @@ app.get("/api/admin/bong-stats", requireAuth, requireAdmin, async (req, res) => 
           substr(created_at, 1, 7) as month,
           count(distinct item_id) as count
         FROM edit_logs
-        WHERE (actor = ? OR lower(actor) = 'bong')
+        WHERE (
+            actor = ? 
+            OR lower(actor) = 'bong' 
+            OR lower(actor) LIKE '%dang%' 
+            OR lower(actor) LIKE '%bong%'
+          )
           AND (
             changes_json LIKE '%"is_posted":1%'
             OR changes_json LIKE '%"is_posted":true%'

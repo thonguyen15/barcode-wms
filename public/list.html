@@ -13,6 +13,7 @@
     <div class="nav">
       <a href="/create.html" id="navCreate">Create</a>
       <a href="/list.html" id="navList" class="active">List</a>
+      <a href="/reconcile.html" id="navReconcile" style="display:none">Đối chiếu</a>
       <a href="/scan.html" id="navScan">Scan</a>
       <a href="/inventory.html" id="navInventory">Inventory</a>
       <a href="/settings.html" id="navSettings" style="display:none">Settings</a>
@@ -46,6 +47,7 @@
         <select id="status">
           <option value="">All</option>
           <option>CREATED</option>
+          <option>SOLD</option>
           <option>SHIPPED</option>
           <option>RETURN</option>
           <option>RETURNED</option>
@@ -137,13 +139,19 @@
       }[m]));
     }
 
-    const STATUS_ICON  = { SHIPPED:'🟢', RETURN:'⚫', RETURNED:'⚫', CREATED:'🟡', REQUEST_RETURN:'🟠' };
+    function formatMoney(val) {
+      if (val === undefined || val === null || isNaN(val) || val === 0) return "0";
+      return new Intl.NumberFormat("vi-VN").format(val);
+    }
+
+    const STATUS_ICON  = { SHIPPED:'🟢', RETURN:'⚫', RETURNED:'⚫', CREATED:'🟡', REQUEST_RETURN:'🟠', SOLD:'🔵' };
     const STATUS_STYLE = {
       SHIPPED:       'background:#dcfce7; color:#166534',
       RETURN:        'background:#f1f5f9; color:#64748b',
       RETURNED:      'background:#f1f5f9; color:#64748b',
       CREATED:       'background:#fef9c3; color:#854d0e',
-      REQUEST_RETURN:'background:#ffedd5; color:#9a3412'
+      REQUEST_RETURN:'background:#ffedd5; color:#9a3412',
+      SOLD:          'background:#f3e8ff; color:#6b21a8'
     };
     function statusPill(status) {
       const icon  = STATUS_ICON[status]  || '❓';
@@ -236,8 +244,11 @@
       currentUserRole = j.role;
       currentUserName = j.user;
 
-      if (j.role === 'admin' && j.user === 'tho') {
-        document.getElementById("navSettings").style.display = "inline-block";
+      if (j.role === 'admin') {
+        document.getElementById("navReconcile").style.display = "inline-block";
+        if (j.user === 'tho') {
+          document.getElementById("navSettings").style.display = "inline-block";
+        }
       } else if (j.role === 'entry') {
         document.getElementById("navScan").style.display = "none";
         document.getElementById("navInventory").style.display = "none";
@@ -458,6 +469,14 @@
                   `}
                   <td style="max-width:250px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap" title="${esc(r.name)}">
                     ${r.is_posted ? '<span title="Đã đăng bán">🏷️</span> ' : ''}${esc(r.name)}
+                    ${(r.buy_price > 0 || r.sold_price > 0) ? `
+                    <div style="font-size:11px; color:#666; margin-top:4px; display:flex; gap:10px; flex-wrap:wrap">
+                      <span>💰 Mua: <b>${formatMoney(r.buy_price)}</b></span>
+                      <span>Bán: <b>${formatMoney(r.sold_price)}</b></span>
+                      <span>Lời: <b style="color:${r.profit >= 0 ? '#16a34a' : '#ef4444'}">${formatMoney(r.profit)}</b></span>
+                      ${r.link ? `<span><a href="${r.link}" target="_blank" style="color:var(--primary)" onclick="event.stopPropagation()">Link 🔗</a></span>` : ''}
+                    </div>
+                    ` : ''}
                   </td>
                   <td class="hide-mobile" style="color:var(--muted); font-family:monospace; font-size:13px">${esc(r.serial_clean || "-")}</td>
                   <td class="hide-mobile"><span class="pill" style="background:${r.inventory_status === 'IN_STOCK' ? '#dbeafe' : '#f1f5f9'}">${esc(r.inventory_status)}</span></td>

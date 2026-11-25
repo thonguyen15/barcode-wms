@@ -98,6 +98,7 @@
     <div class="nav">
       <a href="/create.html" id="navCreate">Create</a>
       <a href="/list.html" id="navList">List</a>
+      <a href="/reconcile.html" id="navReconcile" style="display:none">Đối chiếu</a>
       <a href="/scan.html" id="navScan">Scan</a>
       <a href="/inventory.html" id="navInventory">Inventory</a>
       <a href="/settings.html" id="navSettings" style="display:none">Settings</a>
@@ -174,11 +175,18 @@
     }
 
     function esc(s) { return (s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[m])); }
+    function formatMoney(val) {
+      if (val === undefined || val === null || isNaN(val) || val === 0) return "0";
+      return new Intl.NumberFormat("vi-VN").format(val);
+    }
     function fmtTime(s) { if (!s) return "-"; try { return new Date(s).toLocaleString(); } catch (e) { return s; } }
     async function logout() { await fetch("/api/logout", { method: "POST" }); location.href = "/login.html"; }
     async function checkAdmin() {
       const r = await fetch("/api/me"); const j = await r.json();
-      if (j.role === 'admin') { const nav = document.getElementById("navSettings"); if (nav) nav.style.display = "inline-block"; }
+      if (j.role === 'admin') {
+        const navRec = document.getElementById("navReconcile"); if (navRec) navRec.style.display = "inline-block";
+        const nav = document.getElementById("navSettings"); if (nav) nav.style.display = "inline-block";
+      }
     }
     checkAdmin();
 
@@ -258,7 +266,9 @@
       
       <div class="row" style="margin-bottom:20px">
         ${isStaff ? `
-          <button onclick="setStatus('${it.status === 'SHIPPED' ? 'CREATED' : 'SHIPPED'}')">${it.status === 'SHIPPED' ? '↩️ Hủy Giao hàng (Về Created)' : '🚚 Giao hàng'}</button>
+          ${it.status === 'CREATED' ? `<button onclick="setStatus('SOLD')" style="background:#f3e8ff; color:#6b21a8">💰 Đánh dấu Đã Bán (Sold)</button>` : ''}
+          ${it.status === 'SOLD' ? `<button onclick="setStatus('CREATED')" style="background:#fef9c3; color:#854d0e">↩️ Hủy Đã Bán (Về Kho)</button>` : ''}
+          <button onclick="setStatus('${it.status === 'SHIPPED' ? 'CREATED' : 'SHIPPED'}')">${it.status === 'SHIPPED' ? '↩️ Hủy Giao hàng' : '🚚 Giao hàng'}</button>
           <button onclick="setStatus('RETURN')" style="background:#fff7ed; color:#c2410c">↩️ Return</button>
           <button onclick="setInventory('IN_STOCK')" style="background:#eff6ff; color:#1d4ed8">📦 Vào kho</button>
         ` : ""}
@@ -270,14 +280,21 @@
       <div class="detail-grid">
         <div class="detail-item"><div class="detail-label">Mã Kiện</div><div class="detail-value" style="color:var(--primary)">${esc(it.package_id)}</div></div>
         <div class="detail-item"><div class="detail-label">Mã Vận Đơn</div><div class="detail-value">${esc(it.mvd)}</div></div>
-        <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value"><span class="pill" style="${{ SHIPPED: 'background:#dcfce7;color:#166534', RETURN: 'background:#f1f5f9;color:#64748b', RETURNED: 'background:#f1f5f9;color:#64748b', CREATED: 'background:#fef9c3;color:#854d0e', REQUEST_RETURN: 'background:#ffedd5;color:#9a3412' }[it.status] || ''}">
-          ${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠' }[it.status] || '❓'} ${esc(it.status)}
+        <div class="detail-item"><div class="detail-label">Status</div><div class="detail-value"><span class="pill" style="${{ SHIPPED: 'background:#dcfce7;color:#166534', RETURN: 'background:#f1f5f9;color:#64748b', RETURNED: 'background:#f1f5f9;color:#64748b', CREATED: 'background:#fef9c3;color:#854d0e', REQUEST_RETURN: 'background:#ffedd5;color:#9a3412', SOLD: 'background:#f3e8ff;color:#6b21a8' }[it.status] || ''}">
+          ${{ SHIPPED: '🟢', RETURN: '⚫', RETURNED: '⚫', CREATED: '🟡', REQUEST_RETURN: '🟠', SOLD: '🔵' }[it.status] || '❓'} ${esc(it.status)}
         </span></div></div>
         <div class="detail-item"><div class="detail-label">Loại hàng</div><div class="detail-value"><span class="pill" style="background:var(--primary-light)">${esc(it.category)}</span></div></div>
         <div class="detail-item"><div class="detail-label">Tồn kho</div><div class="detail-value"><span class="pill">${esc(it.inventory_status)}</span></div></div>
         <div class="detail-item"><div class="detail-label">Đăng bán</div><div class="detail-value">${it.is_posted ? '<span class="pill" style="background:#fef9c3; color:#854d0e">🏷️ Đã đăng</span>' : '<span class="pill" style="background:#f1f5f9; color:var(--muted)">Chưa đăng</span>'}</div></div>
         <div class="detail-item"><div class="detail-label">Log Meru</div><div class="detail-value">${it.is_meru_logged ? '<span class="pill" style="background:#dcfce7; color:#166534">✅ Đã Log</span>' : '<span class="pill" style="background:#f1f5f9; color:var(--muted)">Chưa Log</span>'}</div></div>
         <div class="detail-item"><div class="detail-label">Lưu kho</div><div class="detail-value">${diffDays} ngày</div></div>
+        
+        <!-- Financial Info -->
+        <div class="detail-item"><div class="detail-label">Giá mua</div><div class="detail-value">${formatMoney(it.buy_price)}</div></div>
+        <div class="detail-item"><div class="detail-label">Giá bán</div><div class="detail-value">${formatMoney(it.sold_price)}</div></div>
+        <div class="detail-item"><div class="detail-label">Phí ship</div><div class="detail-value">${formatMoney(it.ship_fee)}</div></div>
+        <div class="detail-item"><div class="detail-label">Tiền lời</div><div class="detail-value" style="font-weight:700; color:${it.profit >= 0 ? '#16a34a' : '#ef4444'}">${formatMoney(it.profit)}</div></div>
+        <div class="detail-item" style="grid-column: span 2"><div class="detail-label">Link sản phẩm</div><div class="detail-value">${it.link ? `<a href="${it.link}" target="_blank" style="color:var(--primary); word-break:break-all">${esc(it.link)}</a>` : '-'}</div></div>
       </div>
 
       <div class="detail-item" style="margin-top:16px">

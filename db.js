@@ -113,6 +113,30 @@ CREATE TABLE IF NOT EXISTS inventory_exports (
   try {
     await db.execute("ALTER TABLE items ADD COLUMN shipped_at TEXT");
   } catch(e) { /* ignore */ }
+  try {
+    await db.execute("ALTER TABLE items ADD COLUMN buy_price REAL DEFAULT 0");
+  } catch(e) { /* ignore */ }
+  try {
+    await db.execute("ALTER TABLE items ADD COLUMN sold_price REAL DEFAULT 0");
+  } catch(e) { /* ignore */ }
+  try {
+    await db.execute("ALTER TABLE items ADD COLUMN ship_fee REAL DEFAULT 0");
+  } catch(e) { /* ignore */ }
+  try {
+    await db.execute("ALTER TABLE items ADD COLUMN profit REAL DEFAULT 0");
+  } catch(e) { /* ignore */ }
+  try {
+    await db.execute("ALTER TABLE items ADD COLUMN link TEXT");
+  } catch(e) { /* ignore */ }
+  try {
+    await db.execute("ALTER TABLE items ADD COLUMN is_order INTEGER DEFAULT 0");
+  } catch(e) { /* ignore */ }
+  try {
+    await db.execute("ALTER TABLE items ADD COLUMN order_date TEXT");
+  } catch(e) { /* ignore */ }
+  try {
+    await db.execute("ALTER TABLE items ADD COLUMN merged_from_id INTEGER");
+  } catch(e) { /* ignore */ }
 
   // Migration: Phân loại hàng loạt cho các máy cũ chưa có category
   try {

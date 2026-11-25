@@ -11,6 +11,7 @@
     <div class="nav">
       <a href="/create.html" id="navCreate">Create</a>
       <a href="/list.html" id="navList">List</a>
+      <a href="/reconcile.html" id="navReconcile" style="display:none">Đối chiếu</a>
       <a href="/scan.html" id="navScan">Scan</a>
       <a href="/inventory.html" id="navInventory">Inventory</a>
       <a href="/settings.html" id="navSettings" class="active">Settings</a>
@@ -73,7 +74,7 @@ async function logout(){ await fetch("/api/logout",{method:"POST"}); location.hr
 async function checkAuth() {
   const r = await fetch("/api/me"); const j = await r.json();
   if (j.role === 'admin' && j.user === 'tho') {
-    // ok
+    document.getElementById("navReconcile").style.display = "inline-block";
   } else {
     location.href = "/list.html";
   }

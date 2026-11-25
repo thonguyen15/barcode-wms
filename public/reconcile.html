@@ -1,0 +1,1770 @@
+<!doctype html>
+<html>
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="stylesheet" href="styles.css" />
+  <title>Đối chiếu & Lịch sử - WMS</title>
+  <style>
+    /* Custom CSS for Reconcile Split View */
+    .reconcile-container {
+      display: flex;
+      gap: 20px;
+      margin-top: 10px;
+      height: calc(100vh - 110px);
+      overflow: hidden;
+    }
+
+    /* Left panel: Calendar */
+    .calendar-panel {
+      flex: 1.6;
+      display: flex;
+      flex-direction: column;
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      padding: var(--pad);
+      overflow: hidden;
+    }
+
+    /* Right panel: Unmerged Items */
+    .arrived-panel {
+      flex: 1;
+      max-width: 230px;
+      display: flex;
+      flex-direction: column;
+      background: var(--card-bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 16px 12px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(10px);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    .panel-header h3 {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .search-box {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      background: #fafafa;
+    }
+
+    .search-box input {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+    }
+
+    /* Calendar Header & Grid */
+    .calendar-ctrl {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .calendar-ctrl h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 700;
+    }
+
+    .ctrl-btns {
+      display: flex;
+      gap: 6px;
+    }
+
+    .ctrl-btns button {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: none;
+    }
+
+    .ctrl-btns button:hover {
+      background: #e5e5ea;
+    }
+
+    .calendar-grid {
+      display: grid;
+      grid-template-columns: repeat(7, minmax(0, 1fr));
+      /* Mỗi hàng luôn cao ít nhất bằng nội dung (nhiều đơn trong 1 ngày -> ô tự giãn, không đè hàng dưới) */
+      grid-auto-rows: minmax(max-content, auto);
+      gap: 6px;
+      flex: 1;
+      overflow-y: auto;
+      padding-right: 4px;
+    }
+
+    .weekday-header {
+      text-align: center;
+      font-size: 11px;
+      font-weight: 800;
+      color: var(--muted);
+      text-transform: uppercase;
+      padding: 4px 0;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .calendar-day {
+      background: #ffffff;
+      border: 1px solid rgba(15, 15, 15, 0.08);
+      border-radius: 4px;
+      min-height: 100px;
+      padding: 6px;
+      display: flex;
+      flex-direction: column;
+      position: relative;
+      transition: background 0.2s;
+    }
+
+    .calendar-day.today {
+      background: #fbfbfa;
+      border-color: #dfdfde;
+    }
+
+    .calendar-day.other-month {
+      opacity: 0.35;
+      background: #fafafa;
+    }
+
+    .day-num {
+      font-size: 11px;
+      font-weight: 500;
+      color: rgba(15, 15, 15, 0.6);
+      margin-bottom: 6px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .calendar-day.today .day-num span {
+      background: #eb5757;
+      color: white;
+      border-radius: 3px;
+      padding: 0 4px;
+      height: 16px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 700;
+    }
+
+    .add-day-order-btn {
+      opacity: 0;
+      background: transparent;
+      border: none;
+      color: rgba(15, 15, 15, 0.35);
+      font-size: 13px;
+      cursor: pointer;
+      padding: 0 4px;
+      margin: 0;
+      border-radius: 3px;
+      line-height: 1.2;
+      transition: background 0.1s, color 0.1s;
+    }
+
+    .add-day-order-btn:hover {
+      background: rgba(15, 15, 15, 0.08);
+      color: rgba(15, 15, 15, 0.8);
+    }
+
+    .calendar-day:hover .add-day-order-btn {
+      opacity: 1;
+    }
+
+    /* Order Card in Calendar */
+    .order-card {
+      background: white;
+      border: 1px solid rgba(15, 15, 15, 0.09);
+      border-radius: 4px;
+      padding: 5px 7px;
+      font-size: 11px;
+      margin-bottom: 4px;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(15, 15, 15, 0.04);
+      transition: background 0.1s, box-shadow 0.1s;
+      position: relative;
+      width: 100% !important;
+      box-sizing: border-box !important;
+    }
+
+    .order-card:hover {
+      background: #fbfbfa !important;
+      box-shadow: 0 1px 3px rgba(15, 15, 15, 0.08);
+    }
+
+    .order-card.drag-over {
+      border: 2.5px dashed #0071E3 !important;
+      background: #f0f7ff !important;
+    }
+
+    .order-card.order-status-created {
+      border-left: 3px solid #2e7d32;
+      background: #f1f8e9;
+    }
+
+    .order-card.order-status-created:hover {
+      background: #e8f5e9 !important;
+    }
+
+    .order-card.order-status-ordered {
+      border-left: 3px solid #ef6c00;
+      background: #fff3e0;
+    }
+
+    .order-card.order-status-ordered:hover {
+      background: #ffe0b2 !important;
+    }
+
+    .order-card.order-status-sold {
+      border-left: 3px solid #6a1b9a;
+      background: #f3e5f5;
+    }
+
+    .order-card.order-status-sold:hover {
+      background: #e1bee7 !important;
+    }
+
+    .order-card.order-status-shipped {
+      border-left: 3px solid #1565c0;
+      background: #e3f2fd;
+    }
+
+    .order-card.order-status-shipped:hover {
+      background: #bbdefb !important;
+    }
+
+    .order-card.highlight-order {
+      outline: 2px solid #0071E3;
+      outline-offset: 1px;
+      background: #e3f2fd !important;
+      box-shadow: 0 2px 8px rgba(0, 113, 227, 0.15);
+      z-index: 10;
+    }
+
+    .order-name {
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      margin-bottom: 2px;
+    }
+
+    .order-link-btn {
+      color: var(--primary);
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      margin-left: 2px;
+    }
+
+    .order-fin {
+      display: flex;
+      justify-content: space-between;
+      color: #555;
+      font-size: 10px;
+      margin-top: 2px;
+    }
+
+    .order-profit {
+      font-weight: 700;
+      text-align: right;
+    }
+
+    .profit-positive {
+      color: #16a34a;
+    }
+
+    .profit-negative {
+      color: #ef4444;
+    }
+
+    .order-badge {
+      display: inline-block;
+      font-size: 8px;
+      font-weight: 700;
+      padding: 1px 4px;
+      border-radius: 4px;
+      margin-top: 2px;
+    }
+
+    .badge-created {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    .badge-ordered {
+      background: #fef9c3;
+      color: #854d0e;
+    }
+
+    .badge-sold {
+      background: #f3e8ff;
+      color: #6b21a8;
+    }
+
+    .badge-shipped {
+      background: #e0f2fe;
+      color: #0369a1;
+    }
+
+    /* Arrived Items List style */
+    .arrived-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      background: #fafafa;
+    }
+
+    .arrived-card {
+      background: white;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      font-size: 13px;
+      cursor: pointer;
+      position: relative;
+      box-shadow: var(--shadow);
+      transition: all 0.2s;
+    }
+
+    .arrived-card:active {
+      cursor: grabbing;
+    }
+
+    .arrived-card:hover {
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+      border-color: rgba(0, 0, 0, 0.15);
+    }
+
+    /* Claim status: note is not empty and not "no" */
+    .arrived-card.claim-red {
+      background: #fff1f2 !important;
+      border-color: #fecdd3 !important;
+      color: #9f1239 !important;
+    }
+
+    .arrived-card.claim-red .arrived-name {
+      color: #9f1239;
+    }
+
+    /* Suggested Match highlights */
+    .arrived-card.suggested-match {
+      border: 2px dashed #0071E3;
+      box-shadow: 0 0 10px rgba(0, 113, 227, 0.15);
+    }
+
+    .suggested-label {
+      position: absolute;
+      top: -10px;
+      right: 12px;
+      background: #0071E3;
+      color: white;
+      font-size: 9px;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 10px;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    .arrived-name {
+      font-weight: 700;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+
+    .arrived-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    .arrived-label {
+      font-weight: 600;
+      color: #555;
+    }
+
+    .arrived-note {
+      font-size: 11px;
+      background: rgba(0, 0, 0, 0.03);
+      padding: 4px 8px;
+      border-radius: 6px;
+      margin-top: 4px;
+      font-style: italic;
+      color: #666;
+    }
+
+    .arrived-card.claim-red .arrived-note {
+      background: rgba(239, 68, 68, 0.08);
+      color: #be123c;
+    }
+
+    .action-row {
+      display: flex;
+      justify-content: flex-end;
+      gap: 6px;
+      margin-top: 8px;
+    }
+
+    .quick-merge-btn {
+      background: #0071E3;
+      color: white;
+      border: none;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .telegram-link-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      background: #e0f2fe;
+      color: #0369a1;
+      border: 1px solid #bae6fd;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-decoration: none;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .telegram-link-btn:hover {
+      background: #bae6fd;
+      color: #0284c7;
+    }
+
+    .quick-merge-btn:hover {
+      background: #005bb5;
+    }
+
+    .order-mvd-link {
+      color: #0071E3;
+      text-decoration: underline;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    .order-mvd-link:hover {
+      color: #005bb5;
+    }
+
+    .order-card.suggested-order-match {
+      border: 2px dashed #0071E3;
+      box-shadow: 0 0 8px rgba(0, 113, 227, 0.15);
+      animation: pulseSuggested 2s infinite ease-in-out;
+    }
+
+    @keyframes pulseSuggested {
+      0%, 100% { border-color: #0071E3; }
+      50% { border-color: #90caf9; }
+    }
+
+    .arrived-card.highlight-arrived {
+      outline: 2px solid #0071E3;
+      outline-offset: 1px;
+      background: #f0f7ff !important;
+      box-shadow: 0 4px 12px rgba(0, 113, 227, 0.15);
+      z-index: 10;
+    }
+
+    .toggle-claim-btn {
+      background: white;
+      border: 1px solid var(--border);
+      color: #ef4444;
+      padding: 4px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .toggle-claim-btn:hover {
+      background: #fff1f2;
+    }
+
+    /* Modal dialog styling */
+    .modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+      z-index: 2000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease;
+    }
+
+    .modal-overlay.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .modal-content {
+      background: white;
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-lg);
+      width: 100%;
+      max-width: 480px;
+      padding: 20px;
+      transform: scale(0.95);
+      transition: transform 0.2s ease;
+    }
+
+    .modal-overlay.active .modal-content {
+      transform: scale(1);
+    }
+
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+
+    .modal-header h3 {
+      margin: 0;
+      font-size: 18px;
+      font-weight: 800;
+    }
+
+    .close-modal {
+      background: transparent;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--muted);
+    }
+
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 700;
+      margin-bottom: 4px;
+      color: #333;
+    }
+
+    .form-group input,
+    .form-group textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      font-size: 13px;
+      font-family: inherit;
+    }
+
+    .form-row-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .modal-footer {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 20px;
+    }
+
+    .modal-footer button {
+      padding: 10px 16px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .save-order-btn {
+      background: var(--primary);
+      color: white;
+      border: none;
+    }
+
+    .save-order-btn:hover {
+      background: var(--primary-dark);
+    }
+
+    .delete-order-btn {
+      background: #fee2e2;
+      color: #ef4444;
+      border: 1px solid #fca5a5;
+    }
+
+    .delete-order-btn:hover {
+      background: #fecdd3;
+    }
+
+    .cancel-modal-btn {
+      background: white;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    /* Toast status system */
+    #toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: rgba(0, 0, 0, 0.85);
+      color: white;
+      padding: 12px 24px;
+      border-radius: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      z-index: 9999;
+      transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+      box-shadow: var(--shadow-lg);
+      pointer-events: none;
+    }
+
+    #toast.show {
+      transform: translateX(-50%) translateY(0);
+    }
+
+    /* Month display indicators */
+    .day-has-claims {
+      border: 1.5px solid #ffa39e !important;
+      background: #fff8f8 !important;
+    }
+  </style>
+</head>
+
+<body>
+  <div class="no-print topbar">
+    <div class="nav">
+      <a href="/create.html" id="navCreate">Create</a>
+      <a href="/list.html" id="navList">List</a>
+      <a href="/reconcile.html" id="navReconcile" class="active">Đối chiếu</a>
+      <a href="/scan.html" id="navScan">Scan</a>
+      <a href="/inventory.html" id="navInventory">Inventory</a>
+      <a href="/settings.html" id="navSettings" style="display:none">Settings</a>
+    </div>
+    <button class="logout-btn" onclick="logout()">Logout</button>
+  </div>
+
+  <div class="reconcile-container">
+    <!-- Left panel: Lịch và đơn mua hàng -->
+    <div class="calendar-panel">
+      <div class="calendar-ctrl">
+        <div style="display:flex; align-items:center; gap:12px">
+          <h3 id="calendarMonthLabel">Tháng -- / ----</h3>
+        </div>
+        <div class="ctrl-btns">
+          <button onclick="prevMonth()">◀</button>
+          <button onclick="currentMonth()">Tháng này</button>
+          <button onclick="nextMonth()">▶</button>
+          <button onclick="openAddOrderModal()"
+            style="background:var(--primary); color:white; border:none; margin-left:10px">+ Thêm đơn mua</button>
+        </div>
+      </div>
+
+      <!-- Weekday Headers -->
+      <div style="display:grid; grid-template-columns: repeat(7, 1fr); gap:6px; margin-bottom:4px">
+        <div class="weekday-header">Thứ 2</div>
+        <div class="weekday-header">Thứ 3</div>
+        <div class="weekday-header">Thứ 4</div>
+        <div class="weekday-header">Thứ 5</div>
+        <div class="weekday-header">Thứ 6</div>
+        <div class="weekday-header">Thứ 7</div>
+        <div class="weekday-header" style="color:#ef4444">Chủ Nhật</div>
+      </div>
+
+      <!-- Days Grid -->
+      <div class="calendar-grid" id="calendarGrid"></div>
+    </div>
+
+    <!-- Right panel: Danh sách hàng về chưa đối chiếu -->
+    <div class="arrived-panel">
+      <div class="panel-header">
+        <h3>Hàng chưa xác nhập</h3>
+        <span
+          style="font-size:11px; background:var(--primary-light); color:var(--primary); font-weight:800; padding:2px 8px; border-radius:10px"
+          id="unmergedCount">0 máy</span>
+      </div>
+      <div class="search-box">
+        <input type="text" id="arrivedSearch" placeholder="Tìm theo MVD, Serial, Tên..."
+          oninput="renderArrivedList()" />
+      </div>
+      <div class="arrived-list" id="arrivedList"></div>
+    </div>
+  </div>
+
+  <!-- Modal: Edit / Merge Calendar Order details -->
+  <div class="modal-overlay" id="orderModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h3 id="modalTitle">Chi tiết đơn mua</h3>
+        <button class="close-modal" onclick="closeOrderModal()">&times;</button>
+      </div>
+      <input type="hidden" id="editOrderId" />
+      <div class="form-group">
+        <label>Tên sản phẩm</label>
+        <input type="text" id="editOrderName" />
+      </div>
+      <div class="form-group">
+        <label>Link sản phẩm</label>
+        <input type="text" id="editOrderLink" placeholder="https://..." />
+      </div>
+      <div class="form-group">
+        <label>Mã vận đơn (MVD) hoặc Link theo dõi</label>
+        <div style="display:flex; gap:8px; align-items:center;">
+          <input type="text" id="editOrderMvd" placeholder="Nhập mã vận đơn hoặc link..." style="flex:1" />
+          <a id="editOrderMvdTrackLink" href="#" target="_blank" style="display:none; font-size:11px; text-decoration:underline; color:#0071E3; white-space:nowrap; font-weight:700;">🔗 Theo dõi</a>
+        </div>
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label>Giá mua</label>
+          <input type="number" id="editOrderBuyPrice" oninput="updateModalProfit()" />
+        </div>
+        <div class="form-group">
+          <label>Giá bán</label>
+          <input type="number" id="editOrderSoldPrice" oninput="updateModalProfit()" />
+        </div>
+      </div>
+      <div class="form-row-2">
+        <div class="form-group">
+          <label>Phí vận chuyển</label>
+          <input type="number" id="editOrderShipFee" list="shipFeeSuggestions" oninput="updateModalProfit()" />
+          <datalist id="shipFeeSuggestions">
+            <option value="210"></option>
+            <option value="230"></option>
+            <option value="450"></option>
+            <option value="750"></option>
+            <option value="850"></option>
+            <option value="870"></option>
+            <option value="1050"></option>
+            <option value="1070"></option>
+            <option value="1200"></option>
+            <option value="1450"></option>
+            <option value="1700"></option>
+            <option value="1900"></option>
+            <option value="2100"></option>
+            <option value="2500"></option>
+          </datalist>
+        </div>
+        <div class="form-group">
+          <label>Ngày đặt mua</label>
+          <input type="date" id="editOrderDate" />
+        </div>
+      </div>
+      <div class="form-group" id="editOrderStatusGroup" style="display:none">
+        <label>Trạng thái đơn hàng</label>
+        <select id="editOrderStatus"
+          style="width:100%; padding:8px 12px; height:40px; border-radius:10px; border:1.5px solid var(--border)">
+          <option value="CREATED">✓ Trong kho (CREATED)</option>
+          <option value="SOLD">💰 Đã bán (SOLD)</option>
+          <option value="SHIPPED">🟢 Đã giao/ship (SHIPPED)</option>
+        </select>
+      </div>
+
+      <!-- Lợi nhuận ước tính -->
+      <div class="form-group" id="editOrderProfitGroup" style="display:none; margin-top:15px; padding:12px; border-radius:10px; background:#f0fdf4; border:1.5px solid #bbf7d0">
+        <label style="font-size:11px; font-weight:700; color:#15803d; margin-bottom:2px; display:block">Lợi nhuận ước tính (Bán * 0.9 - Mua - Ship)</label>
+        <div id="editOrderProfitVal" style="font-size:18px; font-weight:800; color:#16a34a">0</div>
+      </div>
+
+      <!-- Thông tin sát nhập từ kho -->
+      <div id="mergedDetailsContainer" style="display:none; margin-top:20px; padding:15px; border-radius:12px; background:#fafafc; border:1px solid var(--border)">
+        <h4 style="margin:0 0 12px 0; font-size:13px; color:#1d1d1f; display:flex; align-items:center; gap:6px; font-weight:700">
+          <span>📦 Thông tin sát nhập từ kho</span>
+        </h4>
+        <div style="font-size:12px; display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; line-height:1.5; color:#4a4a4f">
+          <div>
+            <span style="color:var(--muted); display:block; font-size:10px; text-transform:uppercase; font-weight:700; margin-bottom:2px">Mã vận đơn (MVD)</span>
+            <span id="viewMergedMvd" style="font-weight:700; color:#0071E3"></span>
+          </div>
+          <div>
+            <span style="color:var(--muted); display:block; font-size:10px; text-transform:uppercase; font-weight:700; margin-bottom:2px">Số Serial</span>
+            <span id="viewMergedSerial" style="font-weight:700; color:#1d1d1f"></span>
+          </div>
+          <div>
+            <span style="color:var(--muted); display:block; font-size:10px; text-transform:uppercase; font-weight:700; margin-bottom:2px">Tình trạng máy</span>
+            <span id="viewMergedCondition" style="font-weight:600; color:#1d1d1f"></span>
+          </div>
+          <div>
+            <span style="color:var(--muted); display:block; font-size:10px; text-transform:uppercase; font-weight:700; margin-bottom:2px">Dung lượng pin</span>
+            <span id="viewMergedBattery" style="font-weight:600; color:#1d1d1f"></span>
+          </div>
+          <div style="grid-column: span 2">
+            <span style="color:var(--muted); display:block; font-size:10px; text-transform:uppercase; font-weight:700; margin-bottom:2px">Thông tin bảo hành</span>
+            <span id="viewMergedCoverage" style="color:#1d1d1f"></span>
+          </div>
+        </div>
+        <div id="mergedNoteContainer" style="margin-top:12px; padding:10px; border-radius:8px; background:#fff; border:1px solid #e5e5ea; font-size:12px">
+          <span style="color:var(--muted); font-size:10px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:4px">Ghi chú / Khiếu nại</span>
+          <span id="viewMergedNote" style="color:#1d1d1f; line-height:1.4"></span>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div style="display:flex; gap:8px">
+          <button class="delete-order-btn" id="deleteOrderBtn" onclick="deleteOrder()">Xóa đơn</button>
+          <button class="delete-order-btn" id="unmergeOrderBtn" onclick="unmergeOrder()"
+            style="background:#fff7ed; color:#c2410c; border:1px solid #fed7aa; display:none">Hủy sát nhập</button>
+        </div>
+        <div style="display:flex; gap:8px">
+          <button class="cancel-modal-btn" onclick="closeOrderModal()">Hủy</button>
+          <button class="save-order-btn" onclick="saveOrderDetails()">Lưu</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: View Arrived Item Details -->
+  <div class="modal-overlay" id="arrivedItemModal">
+    <div class="modal-content" style="max-width: 440px;">
+      <div class="modal-header">
+        <h3>Chi tiết hàng về từ kho</h3>
+        <button class="close-modal" onclick="closeArrivedItemModal()">&times;</button>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:12px; font-size:13px; line-height:1.5; color:#1d1d1f">
+        <div style="padding-bottom:12px; border-bottom:1px solid var(--border)">
+          <span style="color:var(--muted); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:4px">Tên sản phẩm</span>
+          <strong style="font-size:15px; color:#1d1d1f" id="arrivedViewName"></strong>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px">
+          <div>
+            <span style="color:var(--muted); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:2px">Mã vận đơn (MVD)</span>
+            <span id="arrivedViewMvd" style="font-weight:700; color:#0071E3"></span>
+          </div>
+          <div>
+            <span style="color:var(--muted); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:2px">Số Serial</span>
+            <span id="arrivedViewSerial" style="font-weight:700"></span>
+          </div>
+          <div>
+            <span style="color:var(--muted); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:2px">Tình trạng máy</span>
+            <span id="arrivedViewCondition"></span>
+          </div>
+          <div>
+            <span style="color:var(--muted); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:2px">Pin</span>
+            <span id="arrivedViewBattery" style="font-weight:600"></span>
+          </div>
+        </div>
+        <div>
+          <span style="color:var(--muted); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:2px">Thông tin bảo hành</span>
+          <span id="arrivedViewCoverage"></span>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px">
+          <div>
+            <span style="color:var(--muted); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:2px">Mã vạch (Package ID)</span>
+            <code id="arrivedViewPackageId"></code>
+          </div>
+          <div>
+            <span style="color:var(--muted); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:2px">Ngày quét</span>
+            <span id="arrivedViewDate"></span>
+          </div>
+        </div>
+        <div id="arrivedViewNoteContainer" style="padding:10px; border-radius:8px; background:#fafafc; border:1px solid #e5e5ea">
+          <span style="color:var(--muted); font-size:11px; text-transform:uppercase; font-weight:700; display:block; margin-bottom:4px">Ghi chú / Khiếu nại</span>
+          <span id="arrivedViewNote" style="line-height:1.4"></span>
+        </div>
+      </div>
+      <div class="modal-footer" style="justify-content:flex-end; margin-top:20px">
+        <button class="save-order-btn" onclick="closeArrivedItemModal()" style="width:100px">Đóng</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast status notification -->
+  <div id="toast">Thông báo</div>
+
+  <script>
+    // System variables
+    let currentYear = new Date().getFullYear();
+    let currentMonthIdx = new Date().getMonth(); // 0 - 11
+    let ordersList = [];
+    let unmergedArrivedList = [];
+    let currentUserRole = null;
+    let currentUserName = null;
+
+    // Toast alert helper
+    let toastTimer = null;
+    function showToast(msg, isError = false) {
+      const toast = document.getElementById("toast");
+      toast.textContent = msg;
+      toast.style.background = isError ? "rgba(220, 38, 38, 0.9)" : "rgba(0, 0, 0, 0.85)";
+      toast.classList.add("show");
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(() => {
+        toast.classList.remove("show");
+      }, 3000);
+    }
+
+    // HTML escape utility
+    function esc(s) {
+      return (s ?? "").replace(/[&<>"']/g, m => ({
+        "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+      }[m]));
+    }
+
+    // Auth verification
+    async function checkAuth() {
+      const r = await fetch("/api/me");
+      const j = await r.json();
+      currentUserRole = j.role;
+      currentUserName = j.user;
+
+      if (j.role !== 'admin') {
+        location.href = "/list.html";
+        return;
+      }
+      if (j.user === 'tho') {
+        document.getElementById("navSettings").style.display = "inline-block";
+      }
+
+      // Load initial data
+      loadMonthData();
+    }
+    async function logout() {
+      await fetch("/api/logout", { method: "POST" });
+      location.href = "/login.html";
+    }
+    checkAuth();
+
+    // Helper functions
+    function formatMoney(val) {
+      if (val === undefined || val === null || isNaN(val) || val === 0) return "0";
+      return new Intl.NumberFormat("vi-VN").format(val);
+    }
+
+    function extractTrackingNumber(mvd) {
+      if (!mvd) return "";
+      const trimmed = mvd.trim();
+      if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
+        // Match any consecutive sequence of 10 to 14 digits anywhere in the URL (typical Japanese carriers)
+        const match = trimmed.match(/\d{10,14}/);
+        if (match) return match[0];
+        
+        // Fallback: search for any sequence of digits at the end of the URL
+        const matchEnd = trimmed.match(/\d+$/);
+        if (matchEnd) return matchEnd[0];
+      }
+      return trimmed;
+    }
+
+    function isMvdMatch(mvd1, mvd2) {
+      if (!mvd1 || !mvd2) return false;
+      const num1 = extractTrackingNumber(mvd1).trim().toLowerCase();
+      const num2 = extractTrackingNumber(mvd2).trim().toLowerCase();
+      if (num1 === num2) return true;
+      
+      if (num1.length >= 4 && num2.length >= 4) {
+        return num1.slice(-4) === num2.slice(-4);
+      }
+      return false;
+    }
+
+    function isClaimNote(note) {
+      if (!note) return false;
+      return note.trim().toLowerCase() !== "no";
+    }
+
+    // Month Navigation
+    function prevMonth() {
+      if (currentMonthIdx === 0) {
+        currentMonthIdx = 11;
+        currentYear--;
+      } else {
+        currentMonthIdx--;
+      }
+      loadMonthData();
+    }
+
+    function nextMonth() {
+      if (currentMonthIdx === 11) {
+        currentMonthIdx = 0;
+        currentYear++;
+      } else {
+        currentMonthIdx++;
+      }
+      loadMonthData();
+    }
+
+    function currentMonth() {
+      currentYear = new Date().getFullYear();
+      currentMonthIdx = new Date().getMonth();
+      loadMonthData();
+    }
+
+    // Load Data APIs
+    async function loadMonthData() {
+      const monthStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}`;
+      document.getElementById("calendarMonthLabel").textContent = `Tháng ${String(currentMonthIdx + 1).padStart(2, '0')} / ${currentYear}`;
+
+      try {
+        // Load Calendar Orders
+        const r1 = await fetch(`/api/orders?month=${monthStr}`);
+        const j1 = await r1.json();
+        ordersList = j1.rows || [];
+
+        // Load Unmerged Arrived items
+        const r2 = await fetch("/api/orders/unmerged-arrived");
+        const j2 = await r2.json();
+        unmergedArrivedList = j2.rows || [];
+
+        renderCalendar();
+        renderArrivedList();
+      } catch (e) {
+        showToast("❌ Lỗi tải dữ liệu", true);
+        console.error(e);
+      }
+    }
+
+    // Render Calendar UI
+    function renderCalendar() {
+      const grid = document.getElementById("calendarGrid");
+      grid.innerHTML = "";
+
+      // Find first day of the month and total days
+      const firstDayDate = new Date(currentYear, currentMonthIdx, 1);
+      // JS day index: 0 is Sun, 1 is Mon... let's adjust to Mon-indexed (0=Mon, 6=Sun)
+      let startDayOffset = firstDayDate.getDay() - 1;
+      if (startDayOffset === -1) startDayOffset = 6; // Sunday
+
+      const lastDayDate = new Date(currentYear, currentMonthIdx + 1, 0);
+      const totalDays = lastDayDate.getDate();
+
+      // Prev Month days to fill start gap
+      const prevMonthLastDay = new Date(currentYear, currentMonthIdx, 0).getDate();
+      for (let i = startDayOffset - 1; i >= 0; i--) {
+        const d = prevMonthLastDay - i;
+        const dayDiv = document.createElement("div");
+        dayDiv.className = "calendar-day other-month";
+        dayDiv.innerHTML = `<div class="day-num">${d}</div>`;
+        grid.appendChild(dayDiv);
+      }
+
+      // Current Month days
+      const today = new Date();
+      for (let d = 1; d <= totalDays; d++) {
+        const dateStr = `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+        const dayDiv = document.createElement("div");
+        dayDiv.className = "calendar-day";
+
+        const isToday = today.getFullYear() === currentYear && today.getMonth() === currentMonthIdx && today.getDate() === d;
+        if (isToday) dayDiv.classList.add("today");
+
+        // Filter orders of this date
+        const dayOrders = ordersList.filter(o => o.order_date === dateStr);
+
+        // Check if any merged item in this day has a claim
+        const hasClaim = dayOrders.some(o => isClaimNote(o.note));
+        if (hasClaim) {
+          dayDiv.classList.add("day-has-claims");
+        }
+
+        // Drop zone behaviors for the day box
+        dayDiv.ondragover = (e) => {
+          e.preventDefault();
+          dayDiv.style.background = "#e6f7ff";
+          dayDiv.style.borderColor = "#1890ff";
+        };
+        dayDiv.ondragleave = () => {
+          dayDiv.style.background = isToday ? "#fbfbfa" : "#ffffff";
+          dayDiv.style.borderColor = "rgba(15, 15, 15, 0.08)";
+        };
+        dayDiv.ondrop = async (e) => {
+          e.preventDefault();
+          dayDiv.style.background = isToday ? "#fbfbfa" : "#ffffff";
+          dayDiv.style.borderColor = "rgba(15, 15, 15, 0.08)";
+
+          const arrivedId = e.dataTransfer.getData("text/plain");
+          if (dayOrders.length === 1) {
+            await mergeItems(dayOrders[0].id, arrivedId);
+          } else if (dayOrders.length > 1) {
+            showToast("ℹ️ Vui lòng thả vào đúng thẻ đơn hàng cụ thể trên lịch!");
+          } else {
+            showToast("ℹ️ Không thể đối chiếu vì ngày này chưa tạo đơn mua hàng!");
+          }
+        };
+
+        // Day cell content
+        let dayHtml = `
+          <div class="day-num">
+            <span>${d}</span>
+            <button class="add-day-order-btn" onclick="openAddOrderModal('${dateStr}')" title="Thêm đơn mua">+</button>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column; gap:4px; width:100%; align-items:stretch">
+        `;
+
+        dayOrders.forEach(o => {
+          const isClaim = isClaimNote(o.note);
+          const profitClass = o.profit >= 0 ? "profit-positive" : "profit-negative";
+
+          let statusClass = "order-status-ordered";
+          let statusBadge = `<span class="order-badge badge-ordered">Chờ hàng</span>`;
+
+          if (o.status === "CREATED") {
+            statusClass = "order-status-created";
+            statusBadge = `<span class="order-badge badge-created">✓ Kho</span>`;
+          } else if (o.status === "SOLD") {
+            statusClass = "order-status-sold";
+            statusBadge = `<span class="order-badge badge-sold">💰 Đã bán</span>`;
+          } else if (o.status === "SHIPPED") {
+            statusClass = "order-status-shipped";
+            statusBadge = `<span class="order-badge badge-shipped">🟢 Shipped</span>`;
+          }
+
+          let linkIcon = "";
+          if (o.link) {
+            linkIcon = `<a href="${o.link}" target="_blank" class="order-link-btn" onclick="event.stopPropagation()">🔗</a>`;
+          }
+
+          const isSuggestedMatch = o.status === 'ORDERED' && o.mvd && unmergedArrivedList.some(a => isMvdMatch(o.mvd, a.mvd));
+          const matchClass = isSuggestedMatch ? "suggested-order-match" : "";
+
+          const trackingNum = extractTrackingNumber(o.mvd);
+          let mvdHtml = esc(o.mvd || "-");
+          if (o.mvd) {
+            const isUrl = o.mvd.trim().startsWith("http://") || o.mvd.trim().startsWith("https://");
+            if (isUrl) {
+              mvdHtml = `<a href="${o.mvd.trim()}" target="_blank" class="order-mvd-link" onclick="event.stopPropagation()">${esc(trackingNum)}</a>`;
+            }
+          }
+
+          // Generate card HTML
+          dayHtml += `
+            <div class="order-card ${statusClass} ${matchClass}" 
+                 data-order-id="${o.id}" 
+                 data-mvd="${o.mvd || ''}" 
+                 onclick="openEditOrderModal(${o.id})"
+                 onmouseenter="handleOrderHover(this)"
+                 onmouseleave="handleOrderLeave(this)"
+                 ondragover="event.preventDefault(); event.stopPropagation(); this.classList.add('drag-over')"
+                 ondragleave="event.stopPropagation(); this.classList.remove('drag-over')"
+                 ondrop="handleCardDrop(event, ${o.id})">
+              <div style="display: flex; align-items: center; justify-content: space-between; gap: 4px;">
+                <div class="order-name" style="flex: 1; min-width: 0; margin-bottom: 0;" title="${esc(o.name)}">${esc(o.name)}</div>
+                ${linkIcon}
+              </div>
+              <div style="font-size:9px; color:var(--muted); margin-top:4px; padding-top:4px; border-top:1px dashed var(--border); display:flex; flex-direction:column; gap:1px">
+                <div>MVD: ${mvdHtml}</div>
+              </div>
+            </div>
+          `;
+        });
+
+        dayHtml += `</div>`;
+        dayDiv.innerHTML = dayHtml;
+        grid.appendChild(dayDiv);
+      }
+
+      // Next Month days to fill end gap
+      const totalCells = startDayOffset + totalDays;
+      const nextMonthGap = 35 - totalCells; // base 35 cells (5 weeks)
+      const targetCells = nextMonthGap >= 0 ? 35 : 42; // if exceeds, use 6 weeks (42 cells)
+      const finalGap = targetCells - totalCells;
+
+      for (let i = 1; i <= finalGap; i++) {
+        const dayDiv = document.createElement("div");
+        dayDiv.className = "calendar-day other-month";
+        dayDiv.innerHTML = `<div class="day-num">${i}</div>`;
+        grid.appendChild(dayDiv);
+      }
+    }
+
+    // Render Arrived Physical items (Right Panel)
+    function renderArrivedList() {
+      const listDiv = document.getElementById("arrivedList");
+      const searchVal = document.getElementById("arrivedSearch").value.toLowerCase();
+
+      listDiv.innerHTML = "";
+
+      // Filter list
+      let filtered = unmergedArrivedList;
+      if (searchVal) {
+        filtered = unmergedArrivedList.filter(item =>
+          (item.name || "").toLowerCase().includes(searchVal) ||
+          (item.serial_clean || "").toLowerCase().includes(searchVal) ||
+          (item.mvd || "").toLowerCase().includes(searchVal)
+        );
+      }
+
+      document.getElementById("unmergedCount").textContent = `${filtered.length} máy`;
+
+      if (filtered.length === 0) {
+        listDiv.innerHTML = `<div style="text-align:center; padding:40px; color:var(--muted); font-size:14px">Không tìm thấy hàng về chưa đối chiếu</div>`;
+        return;
+      }
+
+      filtered.forEach(item => {
+        const isClaim = isClaimNote(item.note);
+        const cardClass = isClaim ? "arrived-card claim-red" : "arrived-card";
+
+        // Auto suggest matching logic
+        let autoMatchHtml = "";
+        let isAutoMatched = false;
+        let matchedOrderId = null;
+
+        if (item.mvd) {
+          const matchedOrder = ordersList.find(o => o.status === 'ORDERED' && isMvdMatch(o.mvd, item.mvd));
+          if (matchedOrder) {
+            isAutoMatched = true;
+            matchedOrderId = matchedOrder.id;
+            autoMatchHtml = `<div class="suggested-label">⚡ Khớp MVD</div>`;
+          }
+        }
+
+        const card = document.createElement("div");
+        card.className = `${cardClass} ${isAutoMatched ? 'suggested-match' : ''}`;
+        card.id = `arrived-item-${item.id}`;
+        card.draggable = true;
+        card.onclick = () => openArrivedItemModal(item.id);
+        card.setAttribute("data-mvd", item.mvd || "");
+
+        if (isAutoMatched) {
+          card.onmouseenter = () => {
+            document.querySelectorAll(`.order-card.order-status-ordered`).forEach(el => {
+              const cardMvd = el.getAttribute("data-mvd");
+              if (isMvdMatch(cardMvd, item.mvd)) el.classList.add("highlight-order");
+            });
+          };
+          card.onmouseleave = () => {
+            document.querySelectorAll(`.order-card.order-status-ordered`).forEach(el => {
+              const cardMvd = el.getAttribute("data-mvd");
+              if (isMvdMatch(cardMvd, item.mvd)) el.classList.remove("highlight-order");
+            });
+          };
+        }
+
+        card.ondragstart = (e) => {
+          e.dataTransfer.setData("text/plain", item.id);
+          card.style.opacity = "0.5";
+
+          // Highlight matching targets if MVD matches and they are not merged yet (status is ORDERED)
+          if (item.mvd) {
+            document.querySelectorAll(`.order-card.order-status-ordered`).forEach(el => {
+              const cardMvd = el.getAttribute("data-mvd");
+              if (isMvdMatch(cardMvd, item.mvd)) {
+                el.style.border = "2px dashed #0071E3";
+                el.style.background = "#e6f7ff";
+              }
+            });
+          }
+        };
+        card.ondragend = () => {
+          card.style.opacity = "1";
+          // Remove highlights
+          document.querySelectorAll(".order-card").forEach(el => {
+            el.classList.remove("drag-over");
+            el.style.border = "";
+            el.style.background = "";
+            el.classList.remove("highlight-order");
+          });
+        };
+
+        let telegramBtn = "";
+        if (item.tg_chat_id && item.tg_msg_id) {
+          const cleanChatId = String(item.tg_chat_id).replace("-100", "");
+          const tgUrl = `https://t.me/c/${cleanChatId}/${item.tg_msg_id}`;
+          telegramBtn = `<a href="${tgUrl}" target="_blank" class="telegram-link-btn" onclick="event.stopPropagation()">✈️ Telegram</a>`;
+        }
+
+        // Render card info
+        card.innerHTML = `
+          ${autoMatchHtml}
+          <div class="arrived-name">${esc(item.name)}</div>
+          <div class="arrived-grid" style="grid-template-columns: 1fr 1fr; margin-bottom: 0;">
+            <div><span class="arrived-label">Mã vận đơn:</span><br>${esc(item.mvd || '-')}</div>
+            <div><span class="arrived-label">Pin (BT):</span><br>${esc(item.battery || '-')}</div>
+          </div>
+          ${item.note ? `<div class="arrived-note">Note: ${esc(item.note)}</div>` : ''}
+          <div class="action-row">
+            ${telegramBtn}
+            ${isAutoMatched ? `<button class="quick-merge-btn" onclick="event.stopPropagation(); mergeItems(${matchedOrderId}, ${item.id})">⚡ Khớp nhanh</button>` : ''}
+          </div>
+        `;
+
+        listDiv.appendChild(card);
+      });
+    }
+
+    // Drag-over card dropping logic
+    async function handleCardDrop(e, orderId) {
+      e.preventDefault();
+      e.stopPropagation();
+      document.querySelectorAll(".order-card").forEach(el => {
+        el.classList.remove("drag-over");
+        el.style.border = "";
+        el.style.background = "";
+      });
+
+      const arrivedId = e.dataTransfer.getData("text/plain");
+      if (arrivedId) {
+        await mergeItems(orderId, arrivedId);
+      }
+    }
+
+    // Merge Items API call
+    async function mergeItems(orderId, arrivedItemId) {
+      try {
+        const order = ordersList.find(o => o.id === orderId);
+        const arrived = unmergedArrivedList.find(a => a.id === parseInt(arrivedItemId));
+
+        if (!order || !arrived) {
+          showToast("❌ Không tìm thấy thông tin đơn hàng hoặc gói hàng", true);
+          return;
+        }
+
+        if (order.status !== 'ORDERED') {
+          showToast("❌ Đơn hàng này đã được sát nhập trước đó rồi!", true);
+          return;
+        }
+
+        const ok = confirm(`Bạn có muốn sát nhập gói hàng:\n"${arrived.name}"\nvào đơn mua hàng trên lịch:\n"${order.name}"?`);
+        if (!ok) return;
+
+        const r = await fetch("/api/orders/merge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: orderId, arrived_item_id: arrivedItemId })
+        });
+
+        const j = await r.json();
+        if (r.ok) {
+          showToast("✅ Sát nhập đơn hàng thành công!");
+          loadMonthData();
+        } else {
+          showToast("❌ " + (j.error || "Gặp lỗi khi sát nhập"), true);
+        }
+      } catch (e) {
+        showToast("❌ Lỗi kết nối server", true);
+        console.error(e);
+      }
+    }
+
+    // Toggle Claim Status on physical items (updates note to "no" or a value)
+    async function toggleClaimQuick(itemId, currentNote) {
+      let newNote = "";
+      if (isClaimNote(currentNote)) {
+        newNote = "no";
+      } else {
+        newNote = prompt("Nhập chi tiết khiếu nại (để trống hoặc nhập 'no' để bỏ claim):", currentNote || "Lỗi máy");
+        if (newNote === null) return; // cancelled
+        if (newNote.trim() === "") newNote = "no";
+      }
+
+      try {
+        const r = await fetch(`/api/items/${itemId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ note: newNote })
+        });
+        const j = await r.json();
+        if (r.ok) {
+          showToast("✅ Đã cập nhật trạng thái khiếu nại!");
+          loadMonthData();
+        } else {
+          showToast("❌ " + (j.error || "Gặp lỗi khi cập nhật"), true);
+        }
+      } catch (e) {
+        showToast("❌ Lỗi kết nối", true);
+        console.error(e);
+      }
+    }
+
+    function handleOrderHover(el) {
+      if (!el.classList.contains("order-status-ordered")) return;
+      const mvd = el.getAttribute("data-mvd");
+      if (!mvd) return;
+
+      let firstMatched = true;
+      document.querySelectorAll(`.arrived-card`).forEach(target => {
+        const arrivedMvd = target.getAttribute("data-mvd");
+        if (isMvdMatch(mvd, arrivedMvd)) {
+          target.classList.add("highlight-arrived");
+          if (firstMatched) {
+            firstMatched = false;
+            const container = document.getElementById("arrivedList");
+            if (container) {
+              const containerTop = container.getBoundingClientRect().top;
+              const targetTop = target.getBoundingClientRect().top;
+              const relativeTop = targetTop - containerTop;
+              container.scrollTo({
+                top: container.scrollTop + relativeTop,
+                behavior: 'smooth'
+              });
+            }
+          }
+        }
+      });
+    }
+
+    function handleOrderLeave(el) {
+      if (!el.classList.contains("order-status-ordered")) return;
+      const mvd = el.getAttribute("data-mvd");
+      if (!mvd) return;
+
+      document.querySelectorAll(`.arrived-card`).forEach(target => {
+        const arrivedMvd = target.getAttribute("data-mvd");
+        if (isMvdMatch(mvd, arrivedMvd)) {
+          target.classList.remove("highlight-arrived");
+        }
+      });
+    }
+
+    function updateModalProfit() {
+      const buyPrice = parseFloat(document.getElementById("editOrderBuyPrice").value || 0);
+      const soldPrice = parseFloat(document.getElementById("editOrderSoldPrice").value || 0);
+      const shipFee = parseFloat(document.getElementById("editOrderShipFee").value || 0);
+      const profit = soldPrice * 0.9 - buyPrice - shipFee;
+      
+      const profitValEl = document.getElementById("editOrderProfitVal");
+      const profitGroupEl = document.getElementById("editOrderProfitGroup");
+      if (profitValEl && profitGroupEl) {
+        profitValEl.textContent = formatMoney(profit) + " đ";
+        if (profit >= 0) {
+          profitValEl.style.color = "#16a34a";
+          profitGroupEl.style.background = "#f0fdf4";
+          profitGroupEl.style.borderColor = "#bbf7d0";
+          profitGroupEl.querySelector("label").style.color = "#15803d";
+        } else {
+          profitValEl.style.color = "#dc2626";
+          profitGroupEl.style.background = "#fef2f2";
+          profitGroupEl.style.borderColor = "#fca5a5";
+          profitGroupEl.querySelector("label").style.color = "#b91c1c";
+        }
+      }
+    }
+
+    function openArrivedItemModal(itemId) {
+      const item = unmergedArrivedList.find(x => x.id === itemId);
+      if (!item) return;
+
+      document.getElementById("arrivedViewName").textContent = item.name || "-";
+      document.getElementById("arrivedViewMvd").textContent = item.mvd || "-";
+      document.getElementById("arrivedViewSerial").textContent = item.serial_clean || "-";
+      document.getElementById("arrivedViewCondition").textContent = item.condition || "-";
+      document.getElementById("arrivedViewBattery").textContent = item.battery || "-";
+      document.getElementById("arrivedViewCoverage").textContent = item.coverage || "-";
+      document.getElementById("arrivedViewPackageId").textContent = item.package_id || "-";
+      
+      let dateText = "-";
+      if (item.updated_at) {
+        try {
+          const d = new Date(item.updated_at);
+          dateText = d.toLocaleString("vi-VN");
+        } catch (e) {
+          dateText = item.updated_at;
+        }
+      }
+      document.getElementById("arrivedViewDate").textContent = dateText;
+
+      const noteContainer = document.getElementById("arrivedViewNoteContainer");
+      const noteEl = document.getElementById("arrivedViewNote");
+      if (isClaimNote(item.note)) {
+        noteEl.textContent = item.note;
+        noteEl.style.color = "#dc2626";
+        noteEl.style.fontWeight = "bold";
+        noteContainer.style.background = "#fef2f2";
+        noteContainer.style.borderColor = "#fca5a5";
+      } else {
+        noteEl.textContent = (item.note && item.note !== "no") ? item.note : "-";
+        noteEl.style.color = "#1d1d1f";
+        noteEl.style.fontWeight = "normal";
+        noteContainer.style.background = "#fafafc";
+        noteContainer.style.borderColor = "#e5e5ea";
+      }
+
+      document.getElementById("arrivedItemModal").classList.add("active");
+    }
+
+    function closeArrivedItemModal() {
+      document.getElementById("arrivedItemModal").classList.remove("active");
+    }
+
+    // Modal Control: Create / Edit Orders
+    function openAddOrderModal(dateStr) {
+      document.getElementById("modalTitle").textContent = "Thêm đơn mua hàng mới";
+      document.getElementById("editOrderId").value = "";
+      document.getElementById("editOrderName").value = "";
+      document.getElementById("editOrderLink").value = "";
+      document.getElementById("editOrderMvd").value = "";
+      document.getElementById("editOrderMvdTrackLink").style.display = "none";
+      document.getElementById("editOrderBuyPrice").value = 0;
+      document.getElementById("editOrderSoldPrice").value = 0;
+      document.getElementById("editOrderShipFee").value = 0;
+
+      const defaultDate = dateStr || `${currentYear}-${String(currentMonthIdx + 1).padStart(2, '0')}-${String(new Date().getDate()).padStart(2, '0')}`;
+      document.getElementById("editOrderDate").value = defaultDate;
+      document.getElementById("deleteOrderBtn").style.display = "none";
+      document.getElementById("unmergeOrderBtn").style.display = "none";
+      document.getElementById("editOrderStatusGroup").style.display = "none";
+      document.getElementById("editOrderProfitGroup").style.display = "none";
+      document.getElementById("mergedDetailsContainer").style.display = "none";
+
+      document.getElementById("orderModal").classList.add("active");
+    }
+
+    function openEditOrderModal(orderId) {
+      const o = ordersList.find(x => x.id === orderId);
+      if (!o) return;
+
+      document.getElementById("modalTitle").textContent = "Chỉnh sửa đơn mua hàng";
+      document.getElementById("editOrderId").value = o.id;
+      document.getElementById("editOrderName").value = o.name || "";
+      document.getElementById("editOrderLink").value = o.link || "";
+      document.getElementById("editOrderMvd").value = o.mvd || "";
+
+      const trackLinkEl = document.getElementById("editOrderMvdTrackLink");
+      if ((o.mvd || "").trim().startsWith("http://") || (o.mvd || "").trim().startsWith("https://")) {
+        trackLinkEl.href = o.mvd.trim();
+        trackLinkEl.textContent = "🔗 " + extractTrackingNumber(o.mvd);
+        trackLinkEl.style.display = "inline";
+      } else {
+        trackLinkEl.style.display = "none";
+      }
+
+      document.getElementById("editOrderBuyPrice").value = o.buy_price || 0;
+      document.getElementById("editOrderSoldPrice").value = o.sold_price || 0;
+      document.getElementById("editOrderShipFee").value = o.ship_fee || 0;
+      document.getElementById("editOrderDate").value = o.order_date || "";
+      document.getElementById("deleteOrderBtn").style.display = "block";
+
+      if (o.status !== 'ORDERED') {
+        document.getElementById("editOrderStatusGroup").style.display = "block";
+        document.getElementById("editOrderStatus").value = o.status;
+      } else {
+        document.getElementById("editOrderStatusGroup").style.display = "none";
+      }
+
+      if (o.status === 'CREATED' && o.merged_from_id) {
+        document.getElementById("unmergeOrderBtn").style.display = "block";
+      } else {
+        document.getElementById("unmergeOrderBtn").style.display = "none";
+      }
+
+      // Show profit and calculate it
+      document.getElementById("editOrderProfitGroup").style.display = "block";
+      updateModalProfit();
+
+      // Show merged details if merged
+      const mergedContainer = document.getElementById("mergedDetailsContainer");
+      if (o.merged_from_id || o.mvd || o.serial_clean || o.condition || o.battery || o.coverage || (o.note && o.note !== 'no')) {
+        mergedContainer.style.display = "block";
+        document.getElementById("viewMergedMvd").textContent = "";
+        document.getElementById("viewMergedSerial").textContent = o.serial_clean || "-";
+        document.getElementById("viewMergedCondition").textContent = o.condition || "-";
+        document.getElementById("viewMergedBattery").textContent = o.battery || "-";
+        document.getElementById("viewMergedCoverage").textContent = o.coverage || "-";
+        
+        const noteContainer = document.getElementById("mergedNoteContainer");
+        const noteEl = document.getElementById("viewMergedNote");
+        if (isClaimNote(o.note)) {
+          noteEl.textContent = o.note;
+          noteEl.style.color = "#dc2626";
+          noteEl.style.fontWeight = "bold";
+          noteContainer.style.background = "#fef2f2";
+          noteContainer.style.borderColor = "#fca5a5";
+        } else {
+          noteEl.textContent = (o.note && o.note !== "no") ? o.note : "-";
+          noteEl.style.color = "#1d1d1f";
+          noteEl.style.fontWeight = "normal";
+          noteContainer.style.background = "#fff";
+          noteContainer.style.borderColor = "#e5e5ea";
+        }
+      } else {
+        mergedContainer.style.display = "none";
+      }
+
+      document.getElementById("orderModal").classList.add("active");
+    }
+
+    function closeOrderModal() {
+      document.getElementById("orderModal").classList.remove("active");
+    }
+
+    async function saveOrderDetails() {
+      const orderId = document.getElementById("editOrderId").value;
+      const payload = {
+        name: document.getElementById("editOrderName").value.trim(),
+        link: document.getElementById("editOrderLink").value.trim(),
+        buy_price: parseFloat(document.getElementById("editOrderBuyPrice").value || 0),
+        sold_price: parseFloat(document.getElementById("editOrderSoldPrice").value || 0),
+        ship_fee: parseFloat(document.getElementById("editOrderShipFee").value || 0),
+        order_date: document.getElementById("editOrderDate").value,
+        mvd: document.getElementById("editOrderMvd").value.trim(),
+        note: "no"
+      };
+
+      if (orderId) {
+        const o = ordersList.find(x => x.id === parseInt(orderId));
+        if (o) {
+          payload.note = o.note || "no";
+          payload.status = o.status === 'ORDERED' ? 'ORDERED' : document.getElementById("editOrderStatus").value;
+        }
+      }
+
+      if (!payload.name) {
+        showToast("❌ Vui lòng nhập tên sản phẩm", true);
+        return;
+      }
+
+      try {
+        let r;
+        if (orderId) {
+          // Update existing order
+          r = await fetch(`/api/orders/${orderId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        } else {
+          // Create new order via UI
+          r = await fetch("/api/orders", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+          });
+        }
+
+        const j = await r.json();
+        if (r.ok) {
+          showToast(orderId ? "✅ Đã lưu thay đổi!" : "✅ Đã tạo đơn mua mới!");
+          closeOrderModal();
+          loadMonthData();
+        } else {
+          showToast("❌ " + (j.error || "Gặp lỗi khi lưu"), true);
+        }
+      } catch (e) {
+        showToast("❌ Lỗi kết nối server", true);
+        console.error(e);
+      }
+    }
+
+    async function deleteOrder() {
+      const orderId = document.getElementById("editOrderId").value;
+      if (!orderId) return;
+
+      const ok = confirm("Bạn có chắc chắn muốn xóa đơn mua hàng này?");
+      if (!ok) return;
+
+      try {
+        const r = await fetch(`/api/orders/${orderId}`, {
+          method: "DELETE"
+        });
+        const j = await r.json();
+        if (r.ok) {
+          showToast("✅ Đã xóa đơn mua!");
+          closeOrderModal();
+          loadMonthData();
+        } else {
+          showToast("❌ " + (j.error || "Không thể xóa đơn"), true);
+        }
+      } catch (e) {
+        showToast("❌ Lỗi kết nối", true);
+        console.error(e);
+      }
+    }
+
+    async function unmergeOrder() {
+      const orderId = document.getElementById("editOrderId").value;
+      if (!orderId) return;
+
+      const ok = confirm("Bạn có chắc chắn muốn hủy sát nhập đơn hàng này?\nGói hàng vật lý gốc sẽ quay trở lại danh sách chờ đối chiếu bên phải.");
+      if (!ok) return;
+
+      try {
+        const r = await fetch("/api/orders/unmerge", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ order_id: parseInt(orderId) })
+        });
+        const j = await r.json();
+        if (r.ok) {
+          showToast("✅ Đã hủy sát nhập đơn hàng!");
+          closeOrderModal();
+          loadMonthData();
+        } else {
+          showToast("❌ " + (j.error || "Gặp lỗi khi hủy sát nhập"), true);
+        }
+      } catch (e) {
+        showToast("❌ Lỗi kết nối", true);
+        console.error(e);
+      }
+    }
+
+    function detectShipFee(name) {
+      const n = (name || "").toLowerCase();
+      if (n.includes("watch")) return 210;
+      if (n.includes("ipad")) return 780;
+      if (n.includes("pencil")) return 210;
+      if (n.includes("keyboard") || n.includes("magic keyboard")) return 780;
+      if (n.includes("macbook") || n.includes("mac mini") || n.includes("mac studio") || n.includes("imac")) return 1200;
+      return 1200;
+    }
+
+    document.getElementById("editOrderName").addEventListener("input", (e) => {
+      const feeEl = document.getElementById("editOrderShipFee");
+      if (feeEl.value == 0 || feeEl.value == "") {
+        feeEl.value = detectShipFee(e.target.value);
+      }
+    });
+
+    document.getElementById("editOrderMvd").addEventListener("input", (e) => {
+      const val = e.target.value.trim();
+      const trackLinkEl = document.getElementById("editOrderMvdTrackLink");
+      if (val.startsWith("http://") || val.startsWith("https://")) {
+        trackLinkEl.href = val;
+        trackLinkEl.textContent = "🔗 " + extractTrackingNumber(val);
+        trackLinkEl.style.display = "inline";
+      } else {
+        trackLinkEl.style.display = "none";
+      }
+    });
+  </script>
+</body>
+
+</html>

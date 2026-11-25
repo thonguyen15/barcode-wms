@@ -11,6 +11,7 @@
     <div class="nav">
       <a href="/create.html" id="navCreate" class="active">Create</a>
       <a href="/list.html" id="navList">List</a>
+      <a href="/reconcile.html" id="navReconcile" style="display:none">Đối chiếu</a>
       <a href="/scan.html" id="navScan">Scan</a>
       <a href="/inventory.html" id="navInventory">Inventory</a>
       <a href="/settings.html" id="navSettings" style="display:none">Settings</a>
@@ -127,8 +128,11 @@
 
     async function checkAuth() {
       const r = await fetch("/api/me"); const j = await r.json();
-      if (j.role === 'admin' && j.user === 'tho') {
-        document.getElementById("navSettings").style.display = "inline-block";
+      if (j.role === 'admin') {
+        document.getElementById("navReconcile").style.display = "inline-block";
+        if (j.user === 'tho') {
+          document.getElementById("navSettings").style.display = "inline-block";
+        }
       } else if (j.role === 'entry') {
         document.getElementById("navScan").style.display = "none";
         document.getElementById("navInventory").style.display = "none";
