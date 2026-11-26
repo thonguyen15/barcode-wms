@@ -67,6 +67,24 @@ export async function tgApi(env, method, payload) {
   }
 }
 
+/** Call a Telegram Bot API method once, without the retry wrapper. */
+export async function tgApiNoRetry(env, method, payload) {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  if (!token) return null;
+  try {
+    const url = `https://api.telegram.org/bot${token}/${method}`;
+    const res = env.TG_DRY_RUN === "1" ? dryRun(url, { method: "POST", body: JSON.stringify(payload) }) : await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err) {
+    console.error(`Telegram ${method} failed:`, err);
+    return null;
+  }
+}
+
 /** Answer a callback query so Telegram stops showing the loading spinner. */
 export function answerCallbackQuery(env, callbackQueryId, text = undefined, showAlert = undefined) {
   const payload = { callback_query_id: callbackQueryId };

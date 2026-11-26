@@ -1,7 +1,7 @@
 import { getDb } from "./db.mjs";
 import { escapeTelegramHtml as escTg, formatTokyoTime as fmtTimeLocal } from "./format_utils.mjs";
 import { nowISO } from "./items_common.mjs";
-import { tgApi } from "./telegram.mjs";
+import { tgApiNoRetry } from "./telegram.mjs";
 
 const REMINDER_LIMIT = 15;
 const MAX_SUBREQUESTS = 45;
@@ -30,7 +30,7 @@ async function fireDueReminders(env, hasBudget) {
     const count = (task.remind_count || 0) + 1;
     const prefix = count > 1 ? `🔔×${count} ` : "🔔 ";
     try {
-      const data = await tgApi(env, "sendMessage", {
+      const data = await tgApiNoRetry(env, "sendMessage", {
         chat_id: task.chat_id,
         text: `${prefix}<b>Nhắc nhở:</b> ${escTg(task.title)}`,
         parse_mode: "HTML",
@@ -75,7 +75,7 @@ async function checkUnpostedItems(env, hasBudget) {
       `📅 Ngày nhập: ${fmtTimeLocal(item.created_at)}\n\n` +
       `👉 <i>Vui lòng kiểm tra và đăng bán sản phẩm này!</i>`;
     try {
-      const data = await tgApi(env, "sendMessage", {
+      const data = await tgApiNoRetry(env, "sendMessage", {
         chat_id: taskChatId,
         text: msg,
         parse_mode: "HTML",

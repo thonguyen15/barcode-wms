@@ -65,3 +65,10 @@ export function getTgActorName(from) {
   const username = from.username ? ` (@${from.username})` : "";
   return `${firstName}${username} (Telegram)`;
 }
+
+/** Resolve the admin id from TELEGRAM_ADMIN_ID or the first authorized user id. */
+export function resolveAdminId(env) {
+  return env.TELEGRAM_ADMIN_ID
+    ? String(env.TELEGRAM_ADMIN_ID).trim()
+    : String(env.AUTHORIZED_TELEGRAM_USER_IDS || "").split(",")[0].trim();
+}

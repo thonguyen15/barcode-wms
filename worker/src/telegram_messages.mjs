@@ -1,6 +1,6 @@
 import { getDb } from "./db.mjs";
 import { escapeTelegramHtml as escTg } from "./format_utils.mjs";
-import { formatTokyoHHMM, getTgActorName, nowISO } from "./items_common.mjs";
+import { formatTokyoHHMM, getTgActorName, nowISO, resolveAdminId } from "./items_common.mjs";
 import { sendTelegramMessage, sendTelegramMessageResult, tgApi } from "./telegram.mjs";
 import { ephemeralMessage, syncTelegramButtons } from "./telegram_callbacks.mjs";
 
@@ -104,11 +104,8 @@ function extractUpdates(obj, item) {
 
 async function applyItemEdit(env, ctx, item, obj, chatId, msg, helperMsgId) {
   const aaronId = String(env.TELEGRAM_AARON || "").trim();
-  const adminId = env.TELEGRAM_ADMIN_ID
-    ? String(env.TELEGRAM_ADMIN_ID).trim()
-    : String(env.AUTHORIZED_TELEGRAM_USER_IDS || "").split(",")[0].trim();
   const userId = String(msg.from.id);
-  const isAuthorized = userId === adminId || (aaronId && userId === aaronId);
+  const isAuthorized = userId === resolveAdminId(env) || (aaronId && userId === aaronId);
 
   if (!isAuthorized) {
     await tgApi(env, "deleteMessage", { chat_id: chatId, message_id: msg.message_id }).catch(() => {});

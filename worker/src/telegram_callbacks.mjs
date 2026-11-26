@@ -1,6 +1,6 @@
 import { getDb } from "./db.mjs";
 import { escapeTelegramHtml as escTg } from "./format_utils.mjs";
-import { getTgActorName, nowISO } from "./items_common.mjs";
+import { getTgActorName, nowISO, resolveAdminId } from "./items_common.mjs";
 import { answerCallbackQuery, sendTelegramMessage, sendTelegramMessageResult, tgApi } from "./telegram.mjs";
 import {
   handleApproveDelete,
@@ -67,13 +67,6 @@ export async function syncTelegramButtons(env, itemId) {
   } catch (err) {
     console.error("syncTelegramButtons error:", err);
   }
-}
-
-/** Resolve the admin id from TELEGRAM_ADMIN_ID or the first authorized user id. */
-function resolveAdminId(env) {
-  return env.TELEGRAM_ADMIN_ID
-    ? String(env.TELEGRAM_ADMIN_ID).trim()
-    : String(env.AUTHORIZED_TELEGRAM_USER_IDS || "").split(",")[0].trim();
 }
 
 /** Check whether a callback user may run an action under the per-role permission rules. */

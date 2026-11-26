@@ -1,6 +1,7 @@
 import { getDb } from "./db.mjs";
 import { escapeTelegramHtml as escTg, formatTokyoTime as fmtTimeLocal } from "./format_utils.mjs";
-import { getTgActorName, nowISO } from "./items_common.mjs";
+import { getTgActorName, nowISO, resolveAdminId } from "./items_common.mjs";
+
 import { answerCallbackQuery, sendTelegramMessage, tgApi } from "./telegram.mjs";
 import { syncTelegramButtons } from "./telegram_callbacks.mjs";
 
