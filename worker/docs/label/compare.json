@@ -1,0 +1,170 @@
+[
+  {
+    "sample": "japanese",
+    "atlasBytes": 50520,
+    "comparisons": {
+      "production": {
+        "pixels": 3892,
+        "textPixels": 3892,
+        "qrPixels": 0,
+        "max": 255,
+        "sum": 657399,
+        "fraction": 0.021012395801839934,
+        "textFraction": 0.04929827228048842,
+        "qrFraction": 0,
+        "mean": 3.5492106854403316
+      },
+      "same-fonts": {
+        "pixels": 404,
+        "textPixels": 404,
+        "qrPixels": 0,
+        "max": 162,
+        "sum": 61006,
+        "fraction": 0.0021811428324623157,
+        "textFraction": 0.0051172923949941735,
+        "qrFraction": 0,
+        "mean": 0.32936336543860406
+      }
+    }
+  },
+  {
+    "sample": "latin",
+    "atlasBytes": 45159,
+    "comparisons": {
+      "production": {
+        "pixels": 23,
+        "textPixels": 23,
+        "qrPixels": 0,
+        "max": 34,
+        "sum": 33559,
+        "fraction": 0.00012417397313523086,
+        "textFraction": 0.00029133100268531186,
+        "qrFraction": 0,
+        "mean": 0.18118062454109618
+      },
+      "same-fonts": {
+        "pixels": 23,
+        "textPixels": 23,
+        "qrPixels": 0,
+        "max": 34,
+        "sum": 33559,
+        "fraction": 0.00012417397313523086,
+        "textFraction": 0.00029133100268531186,
+        "qrFraction": 0,
+        "mean": 0.18118062454109618
+      }
+    }
+  },
+  {
+    "sample": "mixed",
+    "atlasBytes": 49701,
+    "comparisons": {
+      "production": {
+        "pixels": 2875,
+        "textPixels": 2875,
+        "qrPixels": 0,
+        "max": 255,
+        "sum": 465006,
+        "fraction": 0.015521746641903858,
+        "textFraction": 0.036416375335663984,
+        "qrFraction": 0,
+        "mean": 2.51050619790092
+      },
+      "same-fonts": {
+        "pixels": 1,
+        "textPixels": 1,
+        "qrPixels": 0,
+        "max": 35,
+        "sum": 35768,
+        "fraction": 0.00000539886839718395,
+        "textFraction": 0.000012666565334143994,
+        "qrFraction": 0,
+        "mean": 0.19310672483047553
+      }
+    }
+  },
+  {
+    "sample": "long",
+    "atlasBytes": 55839,
+    "comparisons": {
+      "production": {
+        "pixels": 6007,
+        "textPixels": 6007,
+        "qrPixels": 0,
+        "max": 255,
+        "sum": 936358,
+        "fraction": 0.03243100246188399,
+        "textFraction": 0.07608805796220297,
+        "qrFraction": 0,
+        "mean": 5.055273614650369
+      },
+      "same-fonts": {
+        "pixels": 161,
+        "textPixels": 161,
+        "qrPixels": 0,
+        "max": 50,
+        "sum": 55297,
+        "fraction": 0.000869217811946616,
+        "textFraction": 0.002039317018797183,
+        "qrFraction": 0,
+        "mean": 0.2985412257590809
+      }
+    }
+  },
+  {
+    "sample": "fallback",
+    "atlasBytes": 41859,
+    "comparisons": {
+      "production": {
+        "pixels": 2833,
+        "textPixels": 2833,
+        "qrPixels": 0,
+        "max": 255,
+        "sum": 474078,
+        "fraction": 0.01529499416922213,
+        "textFraction": 0.035884379591629934,
+        "qrFraction": 0,
+        "mean": 2.559484732000173
+      },
+      "same-fonts": {
+        "pixels": 1527,
+        "textPixels": 1527,
+        "qrPixels": 0,
+        "max": 255,
+        "sum": 270732,
+        "fraction": 0.008244072042499892,
+        "textFraction": 0.019341845265237877,
+        "qrFraction": 0,
+        "mean": 1.4616464389064052
+      }
+    }
+  },
+  {
+    "sample": "multiline",
+    "atlasBytes": 46980,
+    "comparisons": {
+      "production": {
+        "pixels": 1517,
+        "textPixels": 1517,
+        "qrPixels": 0,
+        "max": 255,
+        "sum": 220902,
+        "fraction": 0.008190083358528052,
+        "textFraction": 0.01921517961189644,
+        "qrFraction": 0,
+        "mean": 1.192620826674729
+      },
+      "same-fonts": {
+        "pixels": 57,
+        "textPixels": 57,
+        "qrPixels": 0,
+        "max": 133,
+        "sum": 38094,
+        "fraction": 0.0003077354986394852,
+        "textFraction": 0.0007219942240462076,
+        "qrFraction": 0,
+        "mean": 0.2056644927223254
+      }
+    }
+  }
+]

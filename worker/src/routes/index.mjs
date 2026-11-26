@@ -5,6 +5,7 @@ import { deleteFlowRoutes } from "./delete_flow.mjs";
 import { externalRoutes } from "./external.mjs";
 import { inventoryRoutes } from "./inventory.mjs";
 import { itemRoutes } from "./items.mjs";
+import { labelRoutes } from "./label.mjs";
 import { publicRoutes } from "./public_scan.mjs";
 import { telegramRoutes } from "./telegram.mjs";
 
@@ -16,4 +17,5 @@ export const routes = new Hono()
   .route("/", externalRoutes)
   .route("/", telegramRoutes)
   .route("/", adminRoutes)
-  .route("/", deleteFlowRoutes);
+  .route("/", deleteFlowRoutes)
+  .route("/", labelRoutes);
