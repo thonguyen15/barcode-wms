@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { pageGuard } from "./page_guard.mjs";
 import { routes } from "./routes/index.mjs";
+import { scheduled } from "./scheduled.mjs";
 
 const app = new Hono();
 
@@ -12,4 +13,5 @@ export default {
   fetch(request, env, ctx) {
     return app.fetch(request, env, ctx);
   },
+  scheduled,
 };

@@ -50,6 +50,77 @@ export async function sendTelegramMessage(env, text, targetChatId = null) {
   }
 }
 
+/** Call a Telegram Bot API method by name and return the parsed JSON body; never throws. */
+export async function tgApi(env, method, payload) {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  if (!token) return null;
+  try {
+    const res = await tgFetch(env, `https://api.telegram.org/bot${token}/${method}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    return await res.json();
+  } catch (err) {
+    console.error(`Telegram ${method} failed:`, err);
+    return null;
+  }
+}
+
+/** Answer a callback query so Telegram stops showing the loading spinner. */
+export function answerCallbackQuery(env, callbackQueryId, text = undefined, showAlert = undefined) {
+  const payload = { callback_query_id: callbackQueryId };
+  if (text !== undefined) payload.text = text;
+  if (showAlert !== undefined) payload.show_alert = showAlert;
+  return tgApi(env, "answerCallbackQuery", payload);
+}
+
+/** Send an HTML message and return the message result, or null on failure. */
+export async function sendTelegramMessageResult(env, text, targetChatId = null, extra = {}) {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = targetChatId || env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return null;
+  const data = await tgApi(env, "sendMessage", {
+    chat_id: chatId,
+    text,
+    parse_mode: "HTML",
+    ...extra,
+  });
+  return data?.ok ? data.result : null;
+}
+
+/** Send a photo from a buffer with HTML caption and inline keyboard, returning the message result. */
+export async function sendTelegramPhoto(env, imageBuffer, caption = "", replyMarkup = null) {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) {
+    console.error("[TELEGRAM] Missing token or chatId");
+    return null;
+  }
+  try {
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    form.append("caption", caption);
+    form.append("parse_mode", "HTML");
+    if (replyMarkup) form.append("reply_markup", JSON.stringify(replyMarkup));
+    form.append("photo", new Blob([imageBuffer], { type: "image/png" }), "qr_code.png");
+    const res = await tgFetch(env, `https://api.telegram.org/bot${token}/sendPhoto`, { method: "POST", body: form });
+    if (!res.ok) {
+      console.error("[TELEGRAM] Photo send failed:", res.status, await res.text());
+      return null;
+    }
+    const data = await res.json();
+    if (!data.ok) {
+      console.error("[TELEGRAM] API returned error:", data);
+      return null;
+    }
+    return data.result;
+  } catch (err) {
+    console.error("[TELEGRAM] sendTelegramPhoto Error:", err.message);
+    return null;
+  }
+}
+
 function dryRun(url, options) {
   const method = url.slice(url.lastIndexOf("/") + 1);
   console.log(`[TELEGRAM dry-run] ${method} ${options.body ?? ""}`);
