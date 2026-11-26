@@ -70,6 +70,25 @@ export const requireAuth = createMiddleware(async (c, next) => {
   await next();
 });
 
+/** Reject with 403 unless admin or staff. */
+export const requireStaff = createMiddleware(async (c, next) => {
+  if (c.get("role") !== "admin" && c.get("role") !== "staff") return c.json({ error: "Staff/Admin only" }, 403);
+  await next();
+});
+
+/** Reject with 403 unless admin. */
+export const requireAdmin = createMiddleware(async (c, next) => {
+  if (c.get("role") !== "admin") return c.json({ error: "Admin only" }, 403);
+  await next();
+});
+
+/** Reject with 403 unless the super admin account. */
+export const requireSuperAdmin = createMiddleware(async (c, next) => {
+  const superAdmin = c.env.SUPER_ADMIN_USER || c.env.ADMIN_USER;
+  if (c.get("role") !== "admin" || c.get("user") !== superAdmin) return c.json({ error: "Tho Admin only" }, 403);
+  await next();
+});
+
 async function sign(payload, secret) {
   if (!secret) throw new Error("SESSION_SECRET is not set");
   const key = await crypto.subtle.importKey(
