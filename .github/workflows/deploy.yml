@@ -3,8 +3,6 @@ name: Deploy (self-hosted on Synology)
 # Chạy trên self-hosted runner gắn trên Synology (private repo -> an toàn).
 # Runner build image native amd64 + deploy local luôn (không cần Docker Hub / SSH).
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
 
 concurrency:

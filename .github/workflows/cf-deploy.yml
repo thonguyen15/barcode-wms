@@ -1,0 +1,29 @@
+name: Deploy Worker (Cloudflare)
+
+# Bản CF mới: deploy lên Cloudflare Workers (subdomain barcode-wms.quocdat029x.workers.dev
+# hoặc custom subdomain gắn sau trong dashboard). Cần secrets CLOUDFLARE_API_TOKEN
+# và repo variable ENABLE_CF_DEPLOY=true để bật tự động; trước đó chỉ chạy workflow_dispatch.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "worker/**"
+      - ".github/workflows/cf-deploy.yml"
+
+concurrency:
+  group: cf-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || vars.ENABLE_CF_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          workingDirectory: worker
+          command: deploy
