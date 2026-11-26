@@ -5,11 +5,16 @@
   "scripts": {
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
-    "hash-password": "node scripts/hash-password.mjs"
+    "hash-password": "node scripts/hash-password.mjs",
+    "build-atlas": "node scripts/build-atlas.mjs",
+    "build-atlas:image": "node scripts/in-image.mjs scripts/build-atlas.mjs",
+    "compare-label": "node scripts/compare-label.mjs",
+    "compare-label:image": "node scripts/in-image.mjs scripts/compare-label.mjs"
   },
   "dependencies": {
     "@libsql/client": "^0.17.2",
-    "hono": "^4.12.0"
+    "hono": "^4.12.0",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"

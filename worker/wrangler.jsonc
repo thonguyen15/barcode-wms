@@ -9,6 +9,7 @@
     "html_handling": "none",
     "run_worker_first": ["/", "/*.html"]
   },
+  "rules": [{ "type": "Data", "globs": ["**/*.bin"], "fallthrough": true }],
   "ratelimits": [
     {
       "name": "RATE_LIMITER",

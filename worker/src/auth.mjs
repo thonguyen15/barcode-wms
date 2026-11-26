@@ -70,6 +70,14 @@ export const requireAuth = createMiddleware(async (c, next) => {
   await next();
 });
 
+/** Reject the request with 401 or 403 unless an admin session is signed in. */
+export const requireAdmin = createMiddleware(async (c, next) => {
+  const denied = await requireAuth(c, () => Promise.resolve());
+  if (denied) return denied;
+  if (c.get("role") !== "admin") return c.json({ error: "Forbidden" }, 403);
+  await next();
+});
+
 async function sign(payload, secret) {
   if (!secret) throw new Error("SESSION_SECRET is not set");
   const key = await crypto.subtle.importKey(
