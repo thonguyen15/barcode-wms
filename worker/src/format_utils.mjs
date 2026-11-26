@@ -36,3 +36,21 @@ export function describeUserAgent(userAgent) {
 
   return `${browser} / ${os}`;
 }
+
+/** Return today's date as YYYYMMDD in Tokyo time. */
+export function tokyoDateKey(d = new Date()) {
+  return d.toLocaleDateString("sv-SE", { timeZone: TOKYO_TIME_ZONE }).replace(/-/g, "");
+}
+
+/** Return the current time as an ISO string with Tokyo offset. */
+export function nowTokyoISO(d = new Date()) {
+  const jst = d.toLocaleString("sv-SE", { timeZone: TOKYO_TIME_ZONE }).replace(" ", "T");
+  return `${jst}+09:00`;
+}
+
+/** Quote a value as one CSV cell. */
+export function csvCell(v) {
+  const s = String(v ?? "");
+  if (/[,"\n]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
