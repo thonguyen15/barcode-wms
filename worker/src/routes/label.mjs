@@ -1,11 +1,11 @@
 import { Hono } from "hono";
-import { requireAdmin } from "../auth.mjs";
+import { requireAdmin, requireAuth } from "../auth.mjs";
 import { renderLabel } from "../label/index.mjs";
 import { SAMPLE_ITEMS } from "../label/samples.mjs";
 
 const MAX_REPEAT = 500;
 
-export const labelRoutes = new Hono().get("/debug/label/:test", requireAdmin, async (c) => {
+export const labelRoutes = new Hono().get("/debug/label/:test", requireAuth, requireAdmin, async (c) => {
   const item = SAMPLE_ITEMS[c.req.param("test")];
   if (!item) return c.json({ error: "Unknown label sample" }, 404);
   const repeat = Math.min(MAX_REPEAT, Math.max(1, Number(c.req.query("repeat")) || 1));
