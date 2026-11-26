@@ -11,3 +11,7 @@ node_modules
 .vscode/
 .claude/
 .claude-flow/
+
+.dev.vars
+.wrangler
+worker/dist
