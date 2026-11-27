@@ -6,12 +6,14 @@ import { externalRoutes } from "./external.mjs";
 import { inventoryRoutes } from "./inventory.mjs";
 import { itemRoutes } from "./items.mjs";
 import { labelRoutes } from "./label.mjs";
+import { orderRoutes } from "./orders.mjs";
 import { publicRoutes } from "./public_scan.mjs";
 import { telegramRoutes } from "./telegram.mjs";
 
 export const routes = new Hono()
   .route("/", authRoutes)
   .route("/", itemRoutes)
+  .route("/", orderRoutes)
   .route("/", publicRoutes)
   .route("/", inventoryRoutes)
   .route("/", externalRoutes)

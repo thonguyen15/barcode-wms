@@ -1,6 +1,8 @@
 import { Hono } from "hono";
 import { requireAuth, requireStaff } from "../auth.mjs";
 import { batch, getDb } from "../db.mjs";
+import { csvCell, tokyoDateKey } from "../format_utils.mjs";
+import { tgFetch } from "../telegram.mjs";
 import {
   buildItemQuery,
   detectCategory,
@@ -112,6 +114,68 @@ itemRoutes.get("/items", requireAuth, async (c) => {
     },
   ]);
   return c.json({ rows: listResult.rows, summary: summaryResult.rows });
+});
+
+itemRoutes.post("/items/export", requireAuth, requireStaff, async (c) => {
+  const { where, params } = buildItemQuery(c.req.query());
+  const date_key = tokyoDateKey();
+
+  try {
+    const db = getDb(c.env);
+    const { rows } = await db.execute({
+      sql: `
+        SELECT category, name, serial_clean, tracking_code, package_id, mvd, status, inventory_status, created_at, updated_at
+        FROM items
+        WHERE ${where.join(" AND ")}
+        ORDER BY category ASC, name ASC
+      `,
+      args: params,
+    });
+
+    if (rows.length === 0) {
+      return c.json({ ok: true, url: null, count: 0, message: "No data" });
+    }
+
+    const header = ["Category", "Name", "Serial", "Tracking", "PackageID", "MVD", "Status", "InventoryStatus", "Created", "Updated"];
+    const csv = [header.join(",")]
+      .concat(
+        rows.map((r) =>
+          [
+            csvCell(r.category),
+            csvCell(r.name),
+            csvCell(r.serial_clean),
+            csvCell(r.tracking_code),
+            csvCell(r.package_id),
+            csvCell(r.mvd),
+            csvCell(r.status),
+            csvCell(r.inventory_status),
+            csvCell(r.created_at),
+            csvCell(r.updated_at),
+          ].join(","),
+        ),
+      )
+      .join("\n");
+
+    const filename = `list_export_${date_key}_${Date.now()}.csv`;
+    await c.env.EXPORTS.put(filename, csv);
+    const url = `/api/exports/${encodeURIComponent(filename)}`;
+
+    await db.execute({
+      sql: `
+        INSERT INTO inventory_exports(date_key, actor, filename, url, row_count, created_at)
+        VALUES(?,?,?,?,?,?)
+      `,
+      args: [date_key, c.get("user"), filename, url, rows.length, nowISO()],
+    });
+
+    c.executionCtx.waitUntil(
+      sendItemsExportDocument(c.env, filename, csv, date_key, rows.length, c.get("user")),
+    );
+
+    return c.json({ ok: true, url, count: rows.length, filename });
+  } catch (e) {
+    return c.json({ error: "Export failed: " + e.message }, 500);
+  }
 });
 
 itemRoutes.get("/items/:id", requireAuth, async (c) => {
@@ -357,3 +421,19 @@ itemRoutes.post("/items/:id/meru-logged", requireAuth, async (c) => {
   }
   return c.json({ ok: true });
 });
+
+async function sendItemsExportDocument(env, filename, csv, dateKey, count, user) {
+  const token = env.TELEGRAM_BOT_TOKEN;
+  const chatId = env.TELEGRAM_CHAT_ID;
+  if (!token || !chatId) return;
+  const form = new FormData();
+  form.append("chat_id", chatId);
+  form.append("caption", `Báo cáo Danh sách (Filter)\nNgày: ${dateKey}\nSố lượng: ${count} món\nNgười xuất: ${user}`);
+  form.append("document", new Blob([csv], { type: "text/csv" }), filename);
+  try {
+    const res = await tgFetch(env, `https://api.telegram.org/bot${token}/sendDocument`, { method: "POST", body: form });
+    if (!res.ok) console.error("Items export notify failed:", await res.text());
+  } catch (err) {
+    console.error("Items export notify failed:", err.message);
+  }
+}

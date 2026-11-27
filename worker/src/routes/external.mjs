@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { getDb } from "../db.mjs";
 import { escapeTelegramHtml as escTg } from "../format_utils.mjs";
 import { detectCategory, genToken, nextPackageId, nowISO } from "../items_common.mjs";
+import { detectShipFee, extractProductCode, fetchProductMetaFromLink, parseAndNormalizeDate } from "../order_utils.mjs";
 import { renderLabel, renderQrBuffer } from "../label.mjs";
 import { sendTelegramMessage, sendTelegramPhoto, tgApi } from "../telegram.mjs";
 import { syncTelegramButtons } from "../telegram_callbacks.mjs";
@@ -195,5 +196,192 @@ externalRoutes.post("/external/mark-posted", async (c) => {
     return c.json({ ok: true, message: `Marked as posted: ${item.package_id} — ${item.name} (${item.serial_clean})` });
   } catch (err) {
     return c.json({ error: err.message }, 500);
+  }
+});
+
+/** Shortcut API: create a calendar order from an external POST. */
+externalRoutes.post("/external/create-order", async (c) => {
+  const apiKey = c.req.header("x-api-key");
+  if (!apiKey || apiKey !== c.env.SHORTCUT_API_KEY) {
+    return c.json({ error: "Unauthorized. Missing or invalid x-api-key header." }, 401);
+  }
+
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    let name = String(body.name ?? "").trim();
+    const link = String(body.link ?? "").trim();
+
+    const rawBuyPrice = body.buy_price;
+    const hasBuyPrice = rawBuyPrice !== undefined && rawBuyPrice !== null && String(rawBuyPrice).trim() !== "";
+    let buy_price = hasBuyPrice ? parseFloat(rawBuyPrice) : null;
+
+    const rawSoldPrice = body.sold_price;
+    const parsedSoldPrice =
+      rawSoldPrice !== undefined && rawSoldPrice !== null && String(rawSoldPrice).trim() !== ""
+        ? parseFloat(rawSoldPrice)
+        : 0;
+    const sold_price = Number.isFinite(parsedSoldPrice) ? parsedSoldPrice : 0;
+
+    if (link && (!name || !hasBuyPrice)) {
+      const meta = await fetchProductMetaFromLink(link);
+      if (!name && meta.title) name = meta.title;
+      if (!hasBuyPrice && meta.price !== null) buy_price = meta.price;
+    }
+
+    buy_price = Number.isFinite(buy_price) ? buy_price : 0;
+
+    if (!name) {
+      return c.json({ error: "Product name is required (or could not extract title from link)" }, 400);
+    }
+
+    const order_date = parseAndNormalizeDate(body.order_date);
+    const package_id = await nextPackageId(c.env);
+    const token = genToken();
+    const t = nowISO();
+    const rawShipFee = body.ship_fee;
+    const parsedShipFee =
+      rawShipFee !== undefined && rawShipFee !== null && String(rawShipFee).trim() !== ""
+        ? parseFloat(rawShipFee)
+        : null;
+    const ship_fee = Number.isFinite(parsedShipFee) ? parsedShipFee : detectShipFee(name);
+    const profit = sold_price * 0.9 - buy_price - ship_fee;
+
+    const db = getDb(c.env);
+    await db.execute({
+      sql: `
+        INSERT INTO items (
+          package_id, token, name, buy_price, sold_price, ship_fee, profit, link, is_order, order_date,
+          status, inventory_status, created_at, updated_at, is_deleted, created_by, category
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, 'ORDERED', 'UNKNOWN', ?, ?, 0, 'shortcut', ?)
+      `,
+      args: [
+        package_id, token, name, buy_price, sold_price, ship_fee, profit, link, order_date,
+        t, t, await detectCategory(c.env, name),
+      ],
+    });
+
+    return c.json({ ok: true, package_id, token, name, buy_price, ship_fee, profit });
+  } catch (e) {
+    console.error("Create order API failed:", e);
+    return c.json({ error: e.message || "Create order failed" }, 500);
+  }
+});
+
+/** Shortcut API: update the shipping MVD (and optional ship fee) of an order. */
+externalRoutes.post("/external/update-order-shipment", async (c) => {
+  const apiKey = c.req.header("x-api-key");
+  if (!apiKey || apiKey !== c.env.SHORTCUT_API_KEY) {
+    return c.json({ error: "Unauthorized. Missing or invalid x-api-key header." }, 401);
+  }
+
+  try {
+    const body = await c.req.json().catch(() => ({}));
+    const { order_id, name, token, mvd, link, product_code, code } = body;
+    const rawShipFee = body.ship_fee;
+    const parsedShipFee =
+      rawShipFee !== undefined && rawShipFee !== null && String(rawShipFee).trim() !== ""
+        ? parseFloat(rawShipFee)
+        : null;
+    const ship_fee = Number.isFinite(parsedShipFee) ? parsedShipFee : null;
+
+    const updated_mvd = String(mvd ?? "").trim();
+    if (!updated_mvd) return c.json({ error: "Tracking number (mvd) is required" }, 400);
+
+    const rawCodeInput = String(product_code ?? code ?? "").trim();
+    const extractedCode = extractProductCode(rawCodeInput) || extractProductCode(link);
+
+    const db = getDb(c.env);
+    let order = null;
+    if (order_id) {
+      const { rows } = await db.execute({
+        sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND id = ? LIMIT 1",
+        args: [order_id],
+      });
+      order = rows[0] || null;
+    } else if (token) {
+      const { rows } = await db.execute({
+        sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND token = ? LIMIT 1",
+        args: [token],
+      });
+      order = rows[0] || null;
+    } else if (rawCodeInput || link) {
+      if (link && String(link).trim()) {
+        const { rows } = await db.execute({
+          sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND link = ? ORDER BY created_at DESC LIMIT 1",
+          args: [String(link).trim()],
+        });
+        order = rows[0] || null;
+      }
+      if (!order && extractedCode) {
+        const { rows } = await db.execute({
+          sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND LOWER(link) LIKE ? ORDER BY created_at DESC",
+          args: [`%${extractedCode}%`],
+        });
+        order = rows.find((r) => extractProductCode(r.link) === extractedCode) || null;
+      }
+      if (!order && rawCodeInput) {
+        const { rows } = await db.execute({
+          sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND LOWER(link) LIKE ? ORDER BY created_at DESC LIMIT 1",
+          args: [`%${rawCodeInput.toLowerCase()}%`],
+        });
+        order = rows[0] || null;
+      }
+    } else if (name) {
+      const { rows } = await db.execute({
+        sql: "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND name = ? ORDER BY created_at DESC LIMIT 1",
+        args: [name],
+      });
+      order = rows[0] || null;
+    } else {
+      const { rows } = await db.execute(
+        "SELECT * FROM items WHERE is_order = 1 AND is_deleted = 0 AND (mvd IS NULL OR mvd = '') ORDER BY created_at DESC LIMIT 1",
+      );
+      order = rows[0] || null;
+    }
+
+    if (!order) {
+      return c.json(
+        { error: extractedCode ? `Order not found for product code: ${extractedCode}` : "Order not found" },
+        404,
+      );
+    }
+
+    const existingMvd = String(order.mvd ?? "").trim();
+    if (existingMvd) {
+      return c.json({
+        ok: true,
+        already_updated: true,
+        message: `Đơn hàng đã được cập nhật MVD trước đó: ${existingMvd}`,
+        order_id: order.id,
+        package_id: order.package_id,
+        name: order.name,
+        product_code: extractedCode || extractProductCode(order.link),
+        mvd: existingMvd,
+      });
+    }
+
+    const updated_ship_fee = ship_fee !== null ? ship_fee : order.ship_fee || detectShipFee(order.name);
+    const updated_profit = (order.sold_price || 0) * 0.9 - (order.buy_price || 0) - updated_ship_fee;
+    const t = nowISO();
+
+    await db.execute({
+      sql: "UPDATE items SET mvd = ?, ship_fee = ?, profit = ?, updated_at = ? WHERE id = ?",
+      args: [updated_mvd, updated_ship_fee, updated_profit, t, order.id],
+    });
+
+    return c.json({
+      ok: true,
+      already_updated: false,
+      message: `Đã cập nhật MVD thành công: ${updated_mvd}`,
+      order_id: order.id,
+      package_id: order.package_id,
+      name: order.name,
+      product_code: extractedCode || extractProductCode(order.link),
+      mvd: updated_mvd,
+      profit: updated_profit,
+    });
+  } catch (e) {
+    console.error("Update shipment API failed:", e);
+    return c.json({ error: e.message || "Update shipment failed" }, 500);
   }
 });
