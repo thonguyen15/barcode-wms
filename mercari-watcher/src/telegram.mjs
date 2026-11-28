@@ -36,14 +36,15 @@ export function createTelegram(token, { fetchImpl = fetch } = {}) {
   return { getUpdates, sendMessage, sendPhoto };
 }
 
-export async function sendAlertMessage(telegram, { text, keyboard, photoUrl }) {
+export async function sendAlertMessage(telegram, { text, keyboard, photoUrl, plain = false }) {
   const chatId = process.env.MERCARI_ALERT_CHAT_ID;
+  const parseMode = plain ? undefined : "HTML";
   if (photoUrl && keyboard) {
     const photo = await telegram.sendPhoto({
       chat_id: chatId,
       photo: photoUrl,
       caption: text.slice(0, 1024),
-      parse_mode: "HTML",
+      parse_mode: parseMode,
       reply_markup: { inline_keyboard: keyboard },
     });
     if (photo.ok) return { ok: true, mode: "photo-with-intent" };
@@ -51,7 +52,7 @@ export async function sendAlertMessage(telegram, { text, keyboard, photoUrl }) {
   const base = {
     chat_id: chatId,
     text,
-    parse_mode: "HTML",
+    parse_mode: parseMode,
     link_preview_options: { is_disabled: true },
   };
   if (keyboard) {
@@ -66,8 +67,8 @@ export async function sendAlertMessage(telegram, { text, keyboard, photoUrl }) {
     const plain = await telegram.sendMessage({ ...base, reply_markup: { inline_keyboard: [[keyboard[0][0]]] } });
     if (plain.ok) return { ok: true, mode: "https-button-only" };
     const raw = await telegram.sendMessage({ ...base, text: `${text}\n${keyboard[0][1].url}` });
-    return raw.ok ? { ok: true, mode: "raw-link" } : { ok: false, mode: "failed" };
+    return raw.ok ? { ok: true, mode: "raw-link" } : { ok: false, mode: "failed", description: raw.description };
   }
-  const plain = await telegram.sendMessage(base);
-  return plain.ok ? { ok: true, mode: "plain" } : { ok: false, mode: "failed" };
+  const fallbackPlain = await telegram.sendMessage(base);
+  return fallbackPlain.ok ? { ok: true, mode: "plain" } : { ok: false, mode: "failed", description: fallbackPlain.description };
 }

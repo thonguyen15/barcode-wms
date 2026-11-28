@@ -116,14 +116,29 @@ export function createPoller({
       baseline: isBaseline,
     });
     if (fresh.length) {
-      alertedTodayCount += fresh.length;
       const head = fresh.slice(0, MAX_ALERT_ITEMS);
       const tail = fresh.slice(MAX_ALERT_ITEMS);
+      const failedIds = [];
       for (const item of head) {
-        await alert(watch, [item]);
+        try {
+          await alert(watch, [item]);
+          alertedTodayCount += 1;
+        } catch (err) {
+          failedIds.push(item.id);
+          log({ level: "warn", msg: "alert_failed", watchId: watch.id, itemId: item.id, err: err.message });
+        }
       }
       if (tail.length) {
-        await alert(watch, tail);
+        try {
+          await alert(watch, tail);
+          alertedTodayCount += tail.length;
+        } catch (err) {
+          failedIds.push(...tail.map((it) => it.id));
+          log({ level: "warn", msg: "alert_failed", watchId: watch.id, count: tail.length, err: err.message });
+        }
+      }
+      if (failedIds.length) {
+        await store.deleteSeen(failedIds);
       }
     }
     await store.updateWatchRun(watch.id, {

@@ -10,6 +10,8 @@ const CONDITION_NAMES = {
 const escapeHtml = (s) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
+export { escapeHtml };
+
 export function conditionName(itemConditionId) {
   const key = Number(itemConditionId);
   return CONDITION_NAMES[key] || String(itemConditionId);
@@ -17,12 +19,13 @@ export function conditionName(itemConditionId) {
 
 export function formatAlert(item, watchName) {
   const name = escapeHtml(item.name || "");
+  const watchLabel = escapeHtml(watchName);
   const price = `¥${Number(item.price || 0).toLocaleString("ja-JP")}`;
   const ageMin = Math.max(0, Math.round((Date.now() / 1000 - Number(item.created)) / 60));
   const cond = conditionName(item.itemConditionId);
   const itemUrl = `https://jp.mercari.com/item/${item.id}`;
   return (
-    `🔔 <b>${watchName}</b>\n` +
+    `🔔 <b>${watchLabel}</b>\n` +
     `${name}\n` +
     `💰 ${price} ｜ 🏷 ${cond}\n` +
     `⏱ đăng ${ageMin} phút trước\n` +

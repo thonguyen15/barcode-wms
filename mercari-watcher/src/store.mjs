@@ -90,6 +90,18 @@ export function createStore(client) {
     }
   }
 
+  async function deleteSeen(itemIds) {
+    if (!itemIds.length) return;
+    for (let i = 0; i < itemIds.length; i += 50) {
+      const chunk = itemIds.slice(i, i + 50);
+      const placeholders = chunk.map(() => "?").join(", ");
+      await client.execute({
+        sql: `DELETE FROM mercari_seen_items WHERE item_id IN (${placeholders})`,
+        args: chunk,
+      });
+    }
+  }
+
   async function countSeenToday() {
     const today = new Date().toISOString().slice(0, 10);
     const rs = await client.execute({
@@ -116,6 +128,7 @@ export function createStore(client) {
     updateWatchRun,
     filterSeenIds,
     insertSeenMany,
+    deleteSeen,
     countSeenToday,
     pruneSeen,
   };
