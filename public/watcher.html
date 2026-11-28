@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Watcher Mercari</title>
+<style>
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; background: #0f1218; color: #e2e6ee; }
+header { display: flex; align-items: center; justify-content: space-between; padding: 14px 24px; background: #161b24; border-bottom: 1px solid #232a36; }
+header h1 { font-size: 18px; margin: 0; color: #7ab8ff; }
+header a { color: #8b94a3; text-decoration: none; font-size: 13px; }
+main { max-width: 1100px; margin: 0 auto; padding: 20px 24px 60px; }
+h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .06em; color: #9aa5b5; margin: 28px 0 10px; }
+section.card { background: #161b24; border: 1px solid #232a36; border-radius: 10px; padding: 16px 18px; margin-bottom: 8px; }
+form.inline { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
+label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #9aa5b5; }
+input { background: #0f1218; border: 1px solid #2b3444; color: #e2e6ee; border-radius: 6px; padding: 8px 10px; font-size: 14px; width: 220px; }
+input:focus { outline: none; border-color: #7ab8ff; }
+button { background: #1d5fd6; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 14px; cursor: pointer; }
+button:hover { background: #2a6fe6; }
+button.ghost { background: #232a36; color: #c8d0dc; }
+button.danger { background: #5a2230; color: #ff9aae; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.stat { background: #161b24; border: 1px solid #232a36; border-radius: 10px; padding: 14px 16px; }
+.stat .v { font-size: 26px; font-weight: 600; color: #7ab8ff; }
+.stat .v.bad { color: #ff7a92; }
+.stat .k { font-size: 12px; color: #9aa5b5; margin-top: 4px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th { text-align: left; color: #8b94a3; font-weight: 500; padding: 8px 10px; border-bottom: 1px solid #232a36; white-space: nowrap; }
+td { padding: 8px 10px; border-bottom: 1px solid #1b212c; vertical-align: top; }
+tr:last-child td { border-bottom: none; }
+.switch { position: relative; width: 36px; height: 20px; display: inline-block; }
+.switch input { display: none; }
+.slider { position: absolute; inset: 0; background: #2b3444; border-radius: 20px; cursor: pointer; transition: .2s; }
+.slider::before { content: ""; position: absolute; width: 14px; height: 14px; left: 3px; top: 3px; background: #9aa5b5; border-radius: 50%; transition: .2s; }
+.switch input:checked + .slider { background: #1d5fd6; }
+.switch input:checked + .slider::before { transform: translateX(16px); background: #fff; }
+.err { color: #ff7a92; font-size: 12px; }
+.muted { color: #6d7686; }
+.alert { display: flex; gap: 12px; padding: 10px 0; border-bottom: 1px solid #1b212c; }
+.alert:last-child { border-bottom: none; }
+.alert img { width: 64px; height: 64px; border-radius: 8px; object-fit: cover; background: #232a36; }
+.alert .a-name a { color: #dfe6f2; text-decoration: none; }
+.alert .a-name a:hover { color: #7ab8ff; }
+#toast { position: fixed; bottom: 20px; right: 20px; background: #232a36; color: #e2e6ee; border: 1px solid #2b3444; border-radius: 8px; padding: 10px 16px; font-size: 13px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+#toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Watcher Mercari</h1>
+  <a href="/list.html">← Quay lại danh sách</a>
+</header>
+<main>
+  <h2>Trạng thái</h2>
+  <div class="grid" id="statusCards"></div>
+
+  <h2>Cấu hình</h2>
+  <section class="card">
+    <form class="inline" id="settingsForm">
+      <label>Mật khẩu bot Telegram
+        <input type="password" id="botToken" placeholder="" autocomplete="new-password">
+      </label>
+      <label>Alert chat id
+        <input type="text" id="alertChatId">
+      </label>
+      <label>Admin user ids
+        <input type="text" id="adminUserIds">
+      </label>
+      <label>Country code
+        <input type="text" id="countryCode">
+      </label>
+      <label>Budget/phút
+        <input type="text" id="budgetPerMinute">
+      </label>
+      <label>Cửa sổ mới (phút)
+        <input type="text" id="freshWindowMin">
+      </label>
+      <button type="submit">Lưu</button>
+      <button type="button" class="ghost" id="testBtn">Gửi tin nhắn thử</button>
+    </form>
+    <p class="err" id="settingsMsg"></p>
+  </section>
+
+  <h2>Watches</h2>
+  <section class="card">
+    <form class="inline" id="addForm">
+      <label>URL tìm kiếm Mercari
+        <input type="url" id="watchUrl" style="width:440px" placeholder="https://jp.mercari.com/search?keyword=...">
+      </label>
+      <button type="submit">Thêm</button>
+    </form>
+  </section>
+  <section class="card">
+    <table>
+      <thead><tr><th>ID</th><th>Tên</th><th>Từ khóa / giá</th><th>Bật</th><th>Interval (s)</th><th>Lần chạy cuối</th><th>Lỗi cuối</th><th></th></tr></thead>
+      <tbody id="watchesBody"></tbody>
+    </table>
+  </section>
+
+  <h2>Alerts (50 mới nhất)</h2>
+  <section class="card" id="alertsCard"></section>
+</main>
+<div id="toast"></div>
+<script>
+const $ = (id) => document.getElementById(id);
+let toastTimer;
+function toast(text) {
+  const el = $("toast");
+  el.textContent = text;
+  el.classList.add("show");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.classList.remove("show"), 3000);
+}
+async function api(path, options) {
+  const res = await fetch(path, options);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || data.description || `HTTP ${res.status}`);
+  return data;
+}
+function thumbUrl(itemId) {
+  if (!/^m\d+$/.test(itemId || "")) return null;
+  return `https://static.mercdn.net/thumb/item/webp/${itemId.slice(1)}_1.jpg`;
+}
+function ago(iso) {
+  if (!iso) return "—";
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
+  if (s < 60) return `${s} giây trước`;
+  if (s < 3600) return `${Math.floor(s / 60)} phút trước`;
+  if (s < 86400) return `${Math.floor(s / 3600)} giờ trước`;
+  return `${Math.floor(s / 86400)} ngày trước`;
+}
+function esc(text) {
+  const div = document.createElement("div");
+  div.textContent = text == null ? "" : String(text);
+  return div.innerHTML;
+}
+async function loadStatus() {
+  try {
+    const data = await api("/api/watcher/status");
+    const cards = [
+      { k: "Đã alert hôm nay", v: data.alertedToday },
+      { k: "Budget dùng trong phút", v: data.budgetUsedLastMinute },
+      { k: "Lỗi Telegram", v: data.telegramLastError ? "có" : "không", bad: Boolean(data.telegramLastError), title: data.telegramLastError || "" },
+    ];
+    $("statusCards").innerHTML = cards.map((c) =>
+      `<div class="stat"><div class="v${c.bad ? " bad" : ""}"${c.title ? ` title="${esc(c.title)}"` : ""}>${esc(c.v)}</div><div class="k">${esc(c.k)}</div></div>`
+    ).join("");
+    $("statusCards").dataset.updatedAt = data.updatedAt || "";
+  } catch (err) {
+    $("statusCards").innerHTML = `<div class="stat"><div class="v bad">—</div><div class="k">${esc(err.message)}</div></div>`;
+  }
+}
+async function loadSettings() {
+  const s = await api("/api/watcher/settings");
+  $("botToken").placeholder = s.botTokenSet ? `${s.botTokenMasked} (bỏ trống để giữ)` : "chưa có";
+  $("alertChatId").value = s.alertChatId || "";
+  $("adminUserIds").value = s.adminUserIds || "";
+  $("countryCode").value = s.countryCode || "";
+  $("budgetPerMinute").value = s.budgetPerMinute || "";
+  $("freshWindowMin").value = s.freshWindowMin || "";
+}
+$("settingsForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    const body = {
+      alertChatId: $("alertChatId").value,
+      adminUserIds: $("adminUserIds").value,
+      countryCode: $("countryCode").value,
+      budgetPerMinute: $("budgetPerMinute").value,
+      freshWindowMin: $("freshWindowMin").value,
+    };
+    if ($("botToken").value) body.botToken = $("botToken").value;
+    const s = await api("/api/watcher/settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    $("botToken").value = "";
+    $("botToken").placeholder = s.botTokenSet ? `${s.botTokenMasked} (bỏ trống để giữ)` : "chưa có";
+    $("settingsMsg").textContent = "";
+    toast("Đã lưu cấu hình");
+  } catch (err) {
+    $("settingsMsg").textContent = err.message;
+  }
+});
+$("testBtn").addEventListener("click", async () => {
+  $("testBtn").disabled = true;
+  try {
+    const r = await api("/api/watcher/settings/test", { method: "POST" });
+    toast(r.ok ? `Đã gửi: ${r.description || "ok"}` : `Lỗi: ${r.description || "không rõ"}`);
+  } catch (err) {
+    toast(`Lỗi: ${err.message}`);
+  } finally {
+    $("testBtn").disabled = false;
+  }
+});
+function summarize(paramsJson) {
+  try {
+    const p = JSON.parse(paramsJson);
+    const parts = [p.keyword];
+    if (Number(p.priceMin) > 0 || Number(p.priceMax) > 0) {
+      parts.push(`${Number(p.priceMin) || 0}–${Number(p.priceMax) || 0} JPY`);
+    }
+    return parts.join(" · ");
+  } catch {
+    return "";
+  }
+}
+async function loadWatches() {
+  const data = await api("/api/watcher/watches");
+  $("watchesBody").innerHTML = data.rows.map((w) => `
+    <tr>
+      <td>${esc(w.id)}</td>
+      <td>${esc(w.name)}</td>
+      <td>${esc(summarize(w.paramsJson))}</td>
+      <td><label class="switch"><input type="checkbox" data-id="${esc(w.id)}" ${w.enabled ? "checked" : ""}><span class="slider"></span></label></td>
+      <td>${esc(w.intervalSec)}</td>
+      <td>${esc(ago(w.lastRunAt))}</td>
+      <td class="err">${esc(w.lastError || "")}</td>
+      <td><button class="danger" data-del="${esc(w.id)}">Xóa</button></td>
+    </tr>`).join("");
+}
+$("watchesBody").addEventListener("change", async (e) => {
+  if (!e.target.matches("input[type=checkbox]")) return;
+  try {
+    await api(`/api/watcher/watches/${e.target.dataset.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: e.target.checked }),
+    });
+    toast("Đã cập nhật");
+  } catch (err) {
+    toast(`Lỗi: ${err.message}`);
+    e.target.checked = !e.target.checked;
+  }
+});
+$("watchesBody").addEventListener("click", async (e) => {
+  const id = e.target.dataset && e.target.dataset.del;
+  if (!id) return;
+  if (!confirm(`Xóa watch #${id}?`)) return;
+  try {
+    await api(`/api/watcher/watches/${id}`, { method: "DELETE" });
+    toast("Đã xóa");
+    loadWatches();
+  } catch (err) {
+    toast(`Lỗi: ${err.message}`);
+  }
+});
+$("addForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  try {
+    await api("/api/watcher/watches", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url: $("watchUrl").value.trim() }),
+    });
+    $("watchUrl").value = "";
+    toast("Đã thêm watch");
+    loadWatches();
+  } catch (err) {
+    toast(`Lỗi: ${err.message}`);
+  }
+});
+async function loadAlerts() {
+  const data = await api("/api/watcher/alerts?limit=50");
+  $("alertsCard").innerHTML = data.rows.map((a) => {
+    const src = thumbUrl(a.itemId);
+    const media = src
+      ? `<img src="${esc(src)}" alt="" loading="lazy">`
+      : `<div style="width:64px;height:64px;border-radius:8px;background:#232a36"></div>`;
+    return `<div class="alert">${media}
+      <div class="a-name"><a href="${esc(a.itemUrl)}" target="_blank" rel="noopener">${esc(a.name || a.itemId)}</a>
+      <div class="muted">${esc(a.price || "")} · ${esc(a.mode || "")} · ${esc(a.sentAt)}</div></div></div>`;
+  }).join("") || `<p class="muted">Chưa có alert nào.</p>`;
+}
+async function refreshAll() {
+  await Promise.all([loadStatus(), loadWatches(), loadAlerts()]);
+}
+(async () => {
+  try {
+    await loadSettings();
+    await refreshAll();
+  } catch (err) {
+    toast(`Lỗi: ${err.message}`);
+  }
+  setInterval(loadStatus, 5000);
+  setInterval(loadAlerts, 30000);
+})();
+</script>
+</body>
+</html>

@@ -4,7 +4,10 @@ import { resolveUser, SESSION_COOKIE } from "./auth.mjs";
 
 const LOGIN_PAGE = "/login.html";
 const LIST_PAGE = "/list.html";
-const ADMIN_PAGES = new Map([["/reconcile.html", LIST_PAGE]]);
+const ADMIN_PAGES = new Map([
+  ["/reconcile.html", LIST_PAGE],
+  ["/watcher.html", LIST_PAGE],
+]);
 
 /** Send visitors without a session to the login page before an HTML page is served. */
 export const pageGuard = createMiddleware(async (c, next) => {
