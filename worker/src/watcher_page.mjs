@@ -79,6 +79,21 @@ tr:last-child td { border-bottom: none; }
       <label>Cửa sổ mới (phút)
         <input type="text" id="freshWindowMin">
       </label>
+      <label>Poll min (giây)
+        <input type="text" id="pollMinSec">
+      </label>
+      <label>Poll max (giây)
+        <input type="text" id="pollMaxSec">
+      </label>
+      <label>Nghỉ từ giờ
+        <input type="text" id="quietHoursStart">
+      </label>
+      <label>Nghỉ tới giờ
+        <input type="text" id="quietHoursEnd">
+      </label>
+      <label>Múi giờ nghỉ
+        <input type="text" id="quietTimezone">
+      </label>
       <button type="submit">Lưu</button>
       <button type="button" class="ghost" id="testBtn">Gửi tin nhắn thử</button>
     </form>
@@ -162,6 +177,11 @@ async function loadSettings() {
   $("countryCode").value = s.countryCode || "";
   $("budgetPerMinute").value = s.budgetPerMinute || "";
   $("freshWindowMin").value = s.freshWindowMin || "";
+  $("pollMinSec").value = s.pollMinSec || "";
+  $("pollMaxSec").value = s.pollMaxSec || "";
+  $("quietHoursStart").value = s.quietHoursStart || "";
+  $("quietHoursEnd").value = s.quietHoursEnd || "";
+  $("quietTimezone").value = s.quietTimezone || "";
 }
 $("settingsForm").addEventListener("submit", async (e) => {
   e.preventDefault();
@@ -172,6 +192,11 @@ $("settingsForm").addEventListener("submit", async (e) => {
       countryCode: $("countryCode").value,
       budgetPerMinute: $("budgetPerMinute").value,
       freshWindowMin: $("freshWindowMin").value,
+      pollMinSec: $("pollMinSec").value,
+      pollMaxSec: $("pollMaxSec").value,
+      quietHoursStart: $("quietHoursStart").value,
+      quietHoursEnd: $("quietHoursEnd").value,
+      quietTimezone: $("quietTimezone").value,
     };
     if ($("botToken").value) body.botToken = $("botToken").value;
     const s = await api("/api/watcher/settings", {

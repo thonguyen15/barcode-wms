@@ -11,6 +11,11 @@ const SETTINGS_DEFAULTS = {
   country_code: "VN",
   budget_per_minute: "36",
   fresh_window_min: "15",
+  poll_min_sec: "5",
+  poll_max_sec: "15",
+  quiet_hours_start: "1",
+  quiet_hours_end: "6",
+  quiet_timezone: "Asia/Ho_Chi_Minh",
 };
 
 export const watcherRoutes = new Hono();
@@ -35,6 +40,19 @@ const SETTINGS_VALIDATORS = {
   countryCode: (v) => /^[A-Z]{2}$/.test(v),
   budgetPerMinute: (v) => isIntIn(v, 1, 600),
   freshWindowMin: (v) => isIntIn(v, 1, 120),
+  pollMinSec: (v) => isIntIn(v, 2, 300),
+  pollMaxSec: (v) => isIntIn(v, 2, 600),
+  quietHoursStart: (v) => isIntIn(v, 0, 23),
+  quietHoursEnd: (v) => isIntIn(v, 0, 24),
+  quietTimezone: (v) => {
+    if (!/^[A-Za-z_]+\/[A-Za-z_+\/-]+$/.test(v)) return false;
+    try {
+      new Intl.DateTimeFormat("en-GB", { timeZone: v });
+      return true;
+    } catch {
+      return false;
+    }
+  },
 };
 
 /** Read the settings rows into a keyed map of values. */
@@ -58,6 +76,11 @@ function settingsResponse(values) {
     countryCode: values.country_code,
     budgetPerMinute: values.budget_per_minute,
     freshWindowMin: values.fresh_window_min,
+    pollMinSec: values.poll_min_sec,
+    pollMaxSec: values.poll_max_sec,
+    quietHoursStart: values.quiet_hours_start,
+    quietHoursEnd: values.quiet_hours_end,
+    quietTimezone: values.quiet_timezone,
   };
 }
 
@@ -83,6 +106,10 @@ watcherRoutes.put("/watcher/settings", async (c) => {
     updates.push([key, body[camel]]);
   }
   if (!updates.length) return c.json({ error: "Không có trường nào để cập nhật" }, 400);
+  const applied = { ...values, ...Object.fromEntries(updates) };
+  if (Number(applied.poll_min_sec) > Number(applied.poll_max_sec)) {
+    return c.json({ error: "pollMaxSec" }, 400);
+  }
   const now = new Date().toISOString();
   await getDb(c.env).batch(
     updates.map(([key, value]) => ({

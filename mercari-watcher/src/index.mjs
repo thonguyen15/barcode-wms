@@ -91,6 +91,20 @@ async function alertError(watch, err) {
   }
 }
 
+function isInQuietHours(ts) {
+  const start = Number(settings.get("quiet_hours_start"));
+  const end = Number(settings.get("quiet_hours_end"));
+  if (!Number.isInteger(start) || !Number.isInteger(end) || start === end) return false;
+  let hour;
+  try {
+    hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: settings.get("quiet_timezone") || "UTC" }).format(new Date(ts)));
+  } catch {
+    return false;
+  }
+  if (Number.isNaN(hour)) hour = 24;
+  return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+}
+
 const poller = createPoller({
   store,
   searchMercari: searchMercariWithSettings,
@@ -100,6 +114,9 @@ const poller = createPoller({
   getBudgetPerMinute: () => Number(settings.get("budget_per_minute")) || 36,
   getFreshWindowMin: () => Number(settings.get("fresh_window_min")) || 15,
   getTelegramLastError: () => telegramLastError,
+  getPollMinSec: () => Number(settings.get("poll_min_sec")) || 5,
+  getPollMaxSec: () => Number(settings.get("poll_max_sec")) || 15,
+  isQuietHour: isInQuietHours,
 });
 
 async function seedEnvWatches() {
