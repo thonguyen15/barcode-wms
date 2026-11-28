@@ -34,16 +34,7 @@ export function formatAlert(item, watchName) {
 }
 
 export function alertKeyboard(item) {
-  const httpsUrl = `https://jp.mercari.com/item/${item.id}`;
-  const intentUrl =
-    `intent://jp.mercari.com/item/${item.id}#Intent;scheme=https;package=jp.mercari.android;` +
-    `S.browser_fallback_url=${encodeURIComponent(httpsUrl)};end`;
-  return [
-    [
-      { text: "📱 iPhone — mở app", url: httpsUrl },
-      { text: "🤖 Android — mở app", url: intentUrl },
-    ],
-  ];
+  return [[{ text: "📱 Mở trên Mercari", url: `https://jp.mercari.com/item/${item.id}` }]];
 }
 
 export function buildAuthorizedChecker(authorizedIdsEnv) {
