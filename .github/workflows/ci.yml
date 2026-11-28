@@ -39,4 +39,4 @@ jobs:
       - name: No added comment lines (mercari-watcher)
         run: |
           git fetch origin main
-          ! git diff origin/main...HEAD -- mercari-watcher | grep -E '^\+[[:space:]]*(#|//)'
+          ! git diff origin/main...HEAD -- mercari-watcher | grep -E '^\+[[:space:]]*(#|//)' | grep -v '^+\#![[:space:]]*/'
