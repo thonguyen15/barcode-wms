@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { createTursoClient, createStore } from "./store.mjs";
 import { searchMercari, parseMercariSearchUrl } from "./mercari.mjs";
 import { createPoller } from "./poller.mjs";
-import { createSettings } from "./settings.mjs";
+import { createQuietHoursChecker, createSettings } from "./settings.mjs";
 import { createTelegram, sendAlertMessage } from "./telegram.mjs";
 import { handleCommand, buildAuthorizedChecker, formatAlert, alertKeyboard, escapeHtml } from "./commands.mjs";
 
@@ -91,19 +91,7 @@ async function alertError(watch, err) {
   }
 }
 
-function isInQuietHours(ts) {
-  const start = Number(settings.get("quiet_hours_start"));
-  const end = Number(settings.get("quiet_hours_end"));
-  if (!Number.isInteger(start) || !Number.isInteger(end) || start === end) return false;
-  let hour;
-  try {
-    hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: settings.get("quiet_timezone") || "UTC" }).format(new Date(ts)));
-  } catch {
-    return false;
-  }
-  if (Number.isNaN(hour)) hour = 24;
-  return start < end ? hour >= start && hour < end : hour >= start || hour < end;
-}
+const isInQuietHours = createQuietHoursChecker(settings.get);
 
 const poller = createPoller({
   store,

@@ -110,3 +110,20 @@ export function createSettings({ store, env = process.env, log = () => {}, refre
 
   return { load, get, getAll, onChange, refresh, start };
 }
+
+/** Build the quiet-hours predicate from the schedule settings. */
+export function createQuietHoursChecker(get) {
+  return (ts) => {
+    const start = Number(get("quiet_hours_start"));
+    const end = Number(get("quiet_hours_end"));
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start === end) return false;
+    let hour;
+    try {
+      hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: get("quiet_timezone") || "UTC" }).format(new Date(ts)));
+    } catch {
+      return false;
+    }
+    if (Number.isNaN(hour)) hour = 24;
+    return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+  };
+}
