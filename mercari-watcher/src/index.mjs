@@ -19,7 +19,7 @@ for (const name of REQUIRED) {
 const log = (obj) => console.log(JSON.stringify({ ts: new Date().toISOString(), ...obj }));
 const healthPort = Number(process.env.HEALTH_PORT || 8788);
 const apiKey = process.env.MERCARI_API_KEY || "";
-const isAuthorizedUser = buildAuthorizedChecker(process.env.AUTHORIZED_TELEGRAM_USER_IDS);
+const isAuthorizedUser = buildAuthorizedChecker(process.env.MERCARI_ADMIN_USER_IDS || process.env.AUTHORIZED_TELEGRAM_USER_IDS);
 const telegram = createTelegram(process.env.MERCARI_BOT_TOKEN);
 const store = createStore(createTursoClient());
 
