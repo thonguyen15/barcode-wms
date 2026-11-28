@@ -5,6 +5,7 @@ on:
     branches: [main]
     paths:
       - "worker/**"
+      - "mercari-watcher/**"
       - ".github/workflows/ci.yml"
   workflow_dispatch:
 
@@ -29,5 +30,13 @@ jobs:
           ! git diff origin/main...HEAD -- worker | grep -E '^\+[[:space:]]*#'
       - name: Bundle dry-run
         run: cd worker && npx wrangler deploy --dry-run --outdir dist
-      - name: File size guard
+      - name: File size guard (worker)
         run: cd worker && find src -name '*.mjs' -exec sh -c 'test $(wc -l < "$1") -lt 500 || { echo "$1 too long"; exit 1; }' _ {} \;
+      - name: Syntax check mercari-watcher sources
+        run: find mercari-watcher/src -name '*.mjs' -print0 | xargs -0 -n1 node --check
+      - name: File size guard (mercari-watcher)
+        run: find mercari-watcher/src -name '*.mjs' -exec sh -c 'test $(wc -l < "$1") -lt 500 || { echo "$1 too long"; exit 1; }' _ {} \;
+      - name: No added comment lines (mercari-watcher)
+        run: |
+          git fetch origin main
+          ! git diff origin/main...HEAD -- mercari-watcher | grep -E '^\+[[:space:]]*(#|//)' | grep -v '^+\#![[:space:]]*/'
