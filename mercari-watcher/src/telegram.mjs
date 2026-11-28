@@ -36,8 +36,8 @@ export function createTelegram(token, { fetchImpl = fetch } = {}) {
   return { getUpdates, sendMessage, sendPhoto };
 }
 
-export async function sendAlertMessage(telegram, { text, keyboard, photoUrl, plain = false }) {
-  const chatId = process.env.MERCARI_ALERT_CHAT_ID;
+export async function sendAlertMessage(telegram, { text, keyboard, photoUrl, plain = false, chatId }) {
+  if (!chatId) return { ok: false, mode: "failed", description: "alert_chat_id is not set" };
   const parseMode = plain ? undefined : "HTML";
   if (photoUrl && keyboard) {
     const photo = await telegram.sendPhoto({

@@ -4,8 +4,6 @@ const BACKOFF_CAP_MS = 300 * 1000;
 const EMPTY_PAUSE_MS = 15 * 60 * 1000;
 const EMPTY_PAUSE_THRESHOLD = 3;
 const ERROR_ALERT_COOLDOWN_MS = 30 * 60 * 1000;
-const FRESH_WINDOW_MS = 15 * 60 * 1000;
-const BUDGET_PER_MINUTE = 36;
 const MAX_ALERT_ITEMS = 5;
 
 export function createPoller({
@@ -16,6 +14,9 @@ export function createPoller({
   log = () => {},
   now = () => Date.now(),
   random = Math.random,
+  getBudgetPerMinute = () => 36,
+  getFreshWindowMin = () => 15,
+  getTelegramLastError = () => null,
 }) {
   const state = new Map();
   const requestTimes = [];
@@ -39,6 +40,8 @@ export function createPoller({
         consecutiveEmpty: 0,
         pausedUntil: 0,
         lastErrorAlertAt: 0,
+        lastNumFound: 0,
+        baselineDone: false,
       };
       state.set(watch.id, s);
     }
@@ -48,7 +51,7 @@ export function createPoller({
   function underBudget(ts) {
     const cutoff = ts - 60000;
     while (requestTimes.length && requestTimes[0] <= cutoff) requestTimes.shift();
-    return requestTimes.length < BUDGET_PER_MINUTE;
+    return requestTimes.length < getBudgetPerMinute();
   }
 
   async function pollWatch(watch, ts) {
@@ -76,8 +79,10 @@ export function createPoller({
       return;
     }
     s.intervalMs = DEFAULT_INTERVAL_MS;
+    s.lastNumFound = result.numFound;
+    s.baselineDone = true;
     const isBaseline = watch.lastRunAt === null;
-    const freshWindowStart = Math.floor((ts - FRESH_WINDOW_MS) / 1000);
+    const freshWindowStart = Math.floor((ts - getFreshWindowMin() * 60000) / 1000);
     const pageIds = result.items.map((it) => String(it.id));
     const seenIds = await store.filterSeenIds(pageIds);
     const newRows = result.items.filter((it) => !seenIds.has(String(it.id)));
@@ -119,23 +124,40 @@ export function createPoller({
       const head = fresh.slice(0, MAX_ALERT_ITEMS);
       const tail = fresh.slice(MAX_ALERT_ITEMS);
       const failedIds = [];
-      for (const item of head) {
-        try {
-          await alert(watch, [item]);
-          alertedTodayCount += 1;
-        } catch (err) {
-          failedIds.push(item.id);
-          log({ level: "warn", msg: "alert_failed", watchId: watch.id, itemId: item.id, err: err.message });
+      const recordSent = async (items, res) => {
+        const sentAt = new Date().toISOString();
+        for (const item of items) {
+          await store.insertAlert({
+            watchId: watch.id,
+            itemId: item.id,
+            name: item.name,
+            price: item.price,
+            createdUnix: Number(item.created),
+            sentAt,
+            mode: res.mode,
+          });
         }
+      };
+      const trySend = async (items) => {
+        try {
+          const res = await alert(watch, items);
+          if (res && res.ok) {
+            alertedTodayCount += items.length;
+            await recordSent(items, res);
+          } else {
+            failedIds.push(...items.map((it) => it.id));
+            log({ level: "warn", msg: "alert_failed", watchId: watch.id, count: items.length, mode: res?.mode, description: res?.description });
+          }
+        } catch (err) {
+          failedIds.push(...items.map((it) => it.id));
+          log({ level: "warn", msg: "alert_failed", watchId: watch.id, count: items.length, err: err.message });
+        }
+      };
+      for (const item of head) {
+        await trySend([item]);
       }
       if (tail.length) {
-        try {
-          await alert(watch, tail);
-          alertedTodayCount += tail.length;
-        } catch (err) {
-          failedIds.push(...tail.map((it) => it.id));
-          log({ level: "warn", msg: "alert_failed", watchId: watch.id, count: tail.length, err: err.message });
-        }
+        await trySend(tail);
       }
       if (failedIds.length) {
         await store.deleteSeen(failedIds);
@@ -146,6 +168,40 @@ export function createPoller({
       lastRunAt: runAtIso,
       lastError: null,
     });
+  }
+
+  function budgetUsedLastMinute(ts) {
+    const cutoff = ts - 60000;
+    while (requestTimes.length && requestTimes[0] <= cutoff) requestTimes.shift();
+    return requestTimes.length;
+  }
+
+  async function writeSnapshot() {
+    const ts = now();
+    const watches = await store.listWatches();
+    const snapshot = {
+      updatedAt: new Date().toISOString(),
+      alertedToday: alertedTodayCount,
+      budgetUsedLastMinute: budgetUsedLastMinute(ts),
+      telegramLastError: getTelegramLastError(),
+      watches: watches.map((w) => {
+        const s = state.get(w.id);
+        return {
+          id: w.id,
+          name: w.name,
+          enabled: w.enabled,
+          intervalMs: s ? s.intervalMs : w.intervalSec * 1000,
+          lastRunAt: w.lastRunAt,
+          lastError: w.lastError,
+          pausedUntil: s && s.pausedUntil ? new Date(s.pausedUntil).toISOString() : null,
+          consecutiveEmpty: s ? s.consecutiveEmpty : 0,
+          lastNumFound: s ? s.lastNumFound : 0,
+          baselineDone: s ? s.baselineDone : false,
+        };
+      }),
+    };
+    await store.setStatus("snapshot", JSON.stringify(snapshot));
+    return snapshot;
   }
 
   async function tick() {
@@ -164,6 +220,7 @@ export function createPoller({
       await pollWatch(watch, ts);
       s.nextRunAt = now() + s.intervalMs + Math.round(random() * JITTER_MS);
     }
+    await writeSnapshot();
   }
 
   async function loop() {
