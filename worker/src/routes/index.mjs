@@ -9,6 +9,7 @@ import { labelRoutes } from "./label.mjs";
 import { orderRoutes } from "./orders.mjs";
 import { publicRoutes } from "./public_scan.mjs";
 import { telegramRoutes } from "./telegram.mjs";
+import { watcherRoutes } from "./watcher.mjs";
 
 export const routes = new Hono()
   .route("/", authRoutes)
@@ -20,4 +21,5 @@ export const routes = new Hono()
   .route("/", telegramRoutes)
   .route("/", adminRoutes)
   .route("/", deleteFlowRoutes)
-  .route("/", labelRoutes);
+  .route("/", labelRoutes)
+  .route("/", watcherRoutes);
