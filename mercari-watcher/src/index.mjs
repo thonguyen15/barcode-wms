@@ -41,30 +41,43 @@ function searchMercariWithSettings(condition, opts = {}) {
   return searchMercari(condition, { ...opts, countryCode: settings.get("country_code") || undefined });
 }
 
+const subscribers = new Set();
+
+function alertRecipients() {
+  const ids = new Set(subscribers);
+  const primary = settings.get("alert_chat_id");
+  if (primary) ids.add(primary);
+  return [...ids];
+}
+
 async function alert(watch, items) {
-  const chatId = settings.get("alert_chat_id");
-  let res;
+  let payload;
   if (items.length > 1) {
     const lines = items.map(
       (it) => `${escapeHtml(it.name)} — ¥${Number(it.price)} https://jp.mercari.com/item/${it.id}`,
     );
-    res = await sendAlertMessage(telegram, {
-      chatId,
-      text: `🔔 ${escapeHtml(watch.name)}: ${items.length} item mới\n${lines.join("\n")}`,
-    });
+    payload = { text: `🔔 ${escapeHtml(watch.name)}: ${items.length} item mới\n${lines.join("\n")}` };
   } else {
     const item = items[0];
-    res = await sendAlertMessage(telegram, {
-      chatId,
+    payload = {
       text: formatAlert(item, watch.name),
       keyboard: alertKeyboard(item),
       photoUrl: Array.isArray(item.thumbnails) && item.thumbnails.length ? item.thumbnails[0] : undefined,
-    });
+    };
   }
-  if (!res.ok) {
-    log({ level: "warn", msg: "alert_send_rejected", watchId: watch.id, mode: res.mode, description: res.description });
+  let primaryRes = { ok: false, mode: "failed", description: "no recipients" };
+  let firstOk = null;
+  for (const chatId of alertRecipients()) {
+    const res = await sendAlertMessage(telegram, { ...payload, chatId });
+    if (!res.ok) {
+      log({ level: "warn", msg: "alert_send_rejected", watchId: watch.id, chatId, mode: res.mode, description: res.description });
+    } else if (!firstOk) {
+      firstOk = res;
+    }
+    if (String(chatId) === String(settings.get("alert_chat_id"))) primaryRes = res;
+    await new Promise((r) => setTimeout(r, 60));
   }
-  return res;
+  return firstOk || primaryRes;
 }
 
 async function alertError(watch, err) {
@@ -130,8 +143,29 @@ async function pollTelegramLoop(gen) {
         if (!msg || !msg.text) continue;
         const userId = msg.from?.id;
         const chatId = msg.chat?.id;
+        const text = msg.text.trim();
+        if (text === "/start") {
+          await store.upsertSubscriber({ chatId, username: msg.from?.username, firstName: msg.from?.first_name });
+          subscribers.add(String(chatId));
+          const hello = await telegram.sendMessage({
+            chat_id: chatId,
+            text: "🔔 Đã bật nhận cảnh báo item mới. Bạn sẽ nhận thông báo tự động khi có hàng mới.\nGửi /stop để dừng nhận.",
+          });
+          if (!hello.ok) log({ level: "warn", msg: "welcome_failed", chatId, description: hello.description });
+          log({ level: "info", msg: "subscriber_added", chatId, userId });
+          continue;
+        }
+        if (text === "/stop") {
+          await store.removeSubscriber(chatId);
+          subscribers.delete(String(chatId));
+          await telegram.sendMessage({ chat_id: chatId, text: "Đã dừng nhận cảnh báo. Gửi /start để bật lại." });
+          log({ level: "info", msg: "subscriber_removed", chatId });
+          continue;
+        }
         if (!isAuthorizedUser(userId)) {
-          log({ level: "info", msg: "unauthorized_command", userId, text: msg.text.slice(0, 30) });
+          log({ level: "info", msg: "unauthorized_command", userId, text: text.slice(0, 30) });
+          const hint = await telegram.sendMessage({ chat_id: chatId, text: "Lệnh này chỉ dành cho admin. Gửi /start để nhận cảnh báo item mới." });
+          if (!hint.ok) log({ level: "warn", msg: "hint_failed", chatId, description: hint.description });
           continue;
         }
         const { reply } = await handleCommand({
@@ -213,6 +247,7 @@ export function startHealthServer({ buildStatus, apiKey: key = apiKey, port = he
 
 async function main() {
   await store.init();
+  for (const id of await store.listSubscribers()) subscribers.add(id);
   await settings.load();
   rebuildTelegram();
   rebuildAuthorizedChecker();
