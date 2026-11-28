@@ -9,7 +9,8 @@ Project map:
 Hard rules:
 
 - GitHub account for this repo: `quocdat029x` only.
-- Never dispatch `deploy.yml` or `deploy-mercari-watcher.yml` — deploys are manual by Dat.
+- Never dispatch `deploy.yml` — the Synology production app deploys only when Dat runs it by hand.
+- `deploy-mercari-watcher.yml` deploys the watcher container automatically on every merge to `main` that touches `mercari-watcher/**`; the Cloudflare worker deploys itself the same way through `cf-deploy.yml`. Nobody dispatches either by hand unless a run must be repeated.
 - The Telegram webhook of the main bot points to Synology until cutover; the watcher bot is a separate bot created via BotFather.
 - No comment lines (`//` or `#`) in code; JSDoc one-liners for public functions only.
 - Keep source files under 500 lines; JS modules only (`.mjs`); named exports; `===`.

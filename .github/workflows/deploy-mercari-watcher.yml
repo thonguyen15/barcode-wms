@@ -1,6 +1,11 @@
 name: Deploy mercari-watcher (self-hosted on Synology)
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - "mercari-watcher/**"
+      - ".github/workflows/deploy-mercari-watcher.yml"
   workflow_dispatch:
 
 concurrency:
