@@ -43,7 +43,7 @@ export function parseMercariSearchUrl(rawUrl) {
   return condition;
 }
 
-/** Build a Mercari CDN thumbnail URL from an item id like m12345678901. */
+/** Build the Mercari item page URL from an item id like m12345678901. */
 export function mercariItemUrl(itemId) {
   return `https://jp.mercari.com/item/${itemId}`;
 }

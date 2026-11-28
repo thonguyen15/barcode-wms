@@ -1,4 +1,5 @@
-<!doctype html>
+/** Serve the watcher admin page HTML. */
+export const WATCHER_PAGE_HTML = `<!doctype html>
 <html lang="vi">
 <head>
 <meta charset="utf-8">
@@ -117,25 +118,25 @@ function toast(text) {
 async function api(path, options) {
   const res = await fetch(path, options);
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || data.description || `HTTP ${res.status}`);
+  if (!res.ok) throw new Error(data.error || data.description || \`HTTP \${res.status}\`);
   return data;
 }
 function thumbUrl(itemId) {
   if (!/^m\d+$/.test(itemId || "")) return null;
-  return `https://static.mercdn.net/thumb/item/webp/${itemId.slice(1)}_1.jpg`;
+  return \`https://static.mercdn.net/thumb/item/webp/\${itemId.slice(1)}_1.jpg\`;
 }
 function ago(iso) {
   if (!iso) return "—";
   const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000));
-  if (s < 60) return `${s} giây trước`;
-  if (s < 3600) return `${Math.floor(s / 60)} phút trước`;
-  if (s < 86400) return `${Math.floor(s / 3600)} giờ trước`;
-  return `${Math.floor(s / 86400)} ngày trước`;
+  if (s < 60) return \`\${s} giây trước\`;
+  if (s < 3600) return \`\${Math.floor(s / 60)} phút trước\`;
+  if (s < 86400) return \`\${Math.floor(s / 3600)} giờ trước\`;
+  return \`\${Math.floor(s / 86400)} ngày trước\`;
 }
 function esc(text) {
   const div = document.createElement("div");
   div.textContent = text == null ? "" : String(text);
-  return div.innerHTML;
+  return div.innerHTML.replaceAll('"', "&quot;").replaceAll("'", "&#39;");
 }
 async function loadStatus() {
   try {
@@ -146,16 +147,16 @@ async function loadStatus() {
       { k: "Lỗi Telegram", v: data.telegramLastError ? "có" : "không", bad: Boolean(data.telegramLastError), title: data.telegramLastError || "" },
     ];
     $("statusCards").innerHTML = cards.map((c) =>
-      `<div class="stat"><div class="v${c.bad ? " bad" : ""}"${c.title ? ` title="${esc(c.title)}"` : ""}>${esc(c.v)}</div><div class="k">${esc(c.k)}</div></div>`
+      \`<div class="stat"><div class="v\${c.bad ? " bad" : ""}"\${c.title ? \` title="\${esc(c.title)}"\` : ""}>\${esc(c.v)}</div><div class="k">\${esc(c.k)}</div></div>\`
     ).join("");
     $("statusCards").dataset.updatedAt = data.updatedAt || "";
   } catch (err) {
-    $("statusCards").innerHTML = `<div class="stat"><div class="v bad">—</div><div class="k">${esc(err.message)}</div></div>`;
+    $("statusCards").innerHTML = \`<div class="stat"><div class="v bad">—</div><div class="k">\${esc(err.message)}</div></div>\`;
   }
 }
 async function loadSettings() {
   const s = await api("/api/watcher/settings");
-  $("botToken").placeholder = s.botTokenSet ? `${s.botTokenMasked} (bỏ trống để giữ)` : "chưa có";
+  $("botToken").placeholder = s.botTokenSet ? \`\${s.botTokenMasked} (bỏ trống để giữ)\` : "chưa có";
   $("alertChatId").value = s.alertChatId || "";
   $("adminUserIds").value = s.adminUserIds || "";
   $("countryCode").value = s.countryCode || "";
@@ -179,7 +180,7 @@ $("settingsForm").addEventListener("submit", async (e) => {
       body: JSON.stringify(body),
     });
     $("botToken").value = "";
-    $("botToken").placeholder = s.botTokenSet ? `${s.botTokenMasked} (bỏ trống để giữ)` : "chưa có";
+    $("botToken").placeholder = s.botTokenSet ? \`\${s.botTokenMasked} (bỏ trống để giữ)\` : "chưa có";
     $("settingsMsg").textContent = "";
     toast("Đã lưu cấu hình");
   } catch (err) {
@@ -190,9 +191,9 @@ $("testBtn").addEventListener("click", async () => {
   $("testBtn").disabled = true;
   try {
     const r = await api("/api/watcher/settings/test", { method: "POST" });
-    toast(r.ok ? `Đã gửi: ${r.description || "ok"}` : `Lỗi: ${r.description || "không rõ"}`);
+    toast(r.ok ? \`Đã gửi: \${r.description || "ok"}\` : \`Lỗi: \${r.description || "không rõ"}\`);
   } catch (err) {
-    toast(`Lỗi: ${err.message}`);
+    toast(\`Lỗi: \${err.message}\`);
   } finally {
     $("testBtn").disabled = false;
   }
@@ -202,7 +203,7 @@ function summarize(paramsJson) {
     const p = JSON.parse(paramsJson);
     const parts = [p.keyword];
     if (Number(p.priceMin) > 0 || Number(p.priceMax) > 0) {
-      parts.push(`${Number(p.priceMin) || 0}–${Number(p.priceMax) || 0} JPY`);
+      parts.push(\`\${Number(p.priceMin) || 0}–\${Number(p.priceMax) || 0} JPY\`);
     }
     return parts.join(" · ");
   } catch {
@@ -211,42 +212,42 @@ function summarize(paramsJson) {
 }
 async function loadWatches() {
   const data = await api("/api/watcher/watches");
-  $("watchesBody").innerHTML = data.rows.map((w) => `
+  $("watchesBody").innerHTML = data.rows.map((w) => \`
     <tr>
-      <td>${esc(w.id)}</td>
-      <td>${esc(w.name)}</td>
-      <td>${esc(summarize(w.paramsJson))}</td>
-      <td><label class="switch"><input type="checkbox" data-id="${esc(w.id)}" ${w.enabled ? "checked" : ""}><span class="slider"></span></label></td>
-      <td>${esc(w.intervalSec)}</td>
-      <td>${esc(ago(w.lastRunAt))}</td>
-      <td class="err">${esc(w.lastError || "")}</td>
-      <td><button class="danger" data-del="${esc(w.id)}">Xóa</button></td>
-    </tr>`).join("");
+      <td>\${esc(w.id)}</td>
+      <td>\${esc(w.name)}</td>
+      <td>\${esc(summarize(w.paramsJson))}</td>
+      <td><label class="switch"><input type="checkbox" data-id="\${esc(w.id)}" \${w.enabled ? "checked" : ""}><span class="slider"></span></label></td>
+      <td>\${esc(w.intervalSec)}</td>
+      <td>\${esc(ago(w.lastRunAt))}</td>
+      <td class="err">\${esc(w.lastError || "")}</td>
+      <td><button class="danger" data-del="\${esc(w.id)}">Xóa</button></td>
+    </tr>\`).join("");
 }
 $("watchesBody").addEventListener("change", async (e) => {
   if (!e.target.matches("input[type=checkbox]")) return;
   try {
-    await api(`/api/watcher/watches/${e.target.dataset.id}`, {
+    await api(\`/api/watcher/watches/\${e.target.dataset.id}\`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ enabled: e.target.checked }),
     });
     toast("Đã cập nhật");
   } catch (err) {
-    toast(`Lỗi: ${err.message}`);
+    toast(\`Lỗi: \${err.message}\`);
     e.target.checked = !e.target.checked;
   }
 });
 $("watchesBody").addEventListener("click", async (e) => {
   const id = e.target.dataset && e.target.dataset.del;
   if (!id) return;
-  if (!confirm(`Xóa watch #${id}?`)) return;
+  if (!confirm(\`Xóa watch #\${id}?\`)) return;
   try {
-    await api(`/api/watcher/watches/${id}`, { method: "DELETE" });
+    await api(\`/api/watcher/watches/\${id}\`, { method: "DELETE" });
     toast("Đã xóa");
     loadWatches();
   } catch (err) {
-    toast(`Lỗi: ${err.message}`);
+    toast(\`Lỗi: \${err.message}\`);
   }
 });
 $("addForm").addEventListener("submit", async (e) => {
@@ -261,7 +262,7 @@ $("addForm").addEventListener("submit", async (e) => {
     toast("Đã thêm watch");
     loadWatches();
   } catch (err) {
-    toast(`Lỗi: ${err.message}`);
+    toast(\`Lỗi: \${err.message}\`);
   }
 });
 async function loadAlerts() {
@@ -269,12 +270,12 @@ async function loadAlerts() {
   $("alertsCard").innerHTML = data.rows.map((a) => {
     const src = thumbUrl(a.itemId);
     const media = src
-      ? `<img src="${esc(src)}" alt="" loading="lazy">`
-      : `<div style="width:64px;height:64px;border-radius:8px;background:#232a36"></div>`;
-    return `<div class="alert">${media}
-      <div class="a-name"><a href="${esc(a.itemUrl)}" target="_blank" rel="noopener">${esc(a.name || a.itemId)}</a>
-      <div class="muted">${esc(a.price || "")} · ${esc(a.mode || "")} · ${esc(a.sentAt)}</div></div></div>`;
-  }).join("") || `<p class="muted">Chưa có alert nào.</p>`;
+      ? \`<img src="\${esc(src)}" alt="" loading="lazy">\`
+      : \`<div style="width:64px;height:64px;border-radius:8px;background:#232a36"></div>\`;
+    return \`<div class="alert">\${media}
+      <div class="a-name"><a href="\${esc(a.itemUrl)}" target="_blank" rel="noopener">\${esc(a.name || a.itemId)}</a>
+      <div class="muted">\${esc(a.price || "")} · \${esc(a.mode || "")} · \${esc(a.sentAt)}</div></div></div>\`;
+  }).join("") || \`<p class="muted">Chưa có alert nào.</p>\`;
 }
 async function refreshAll() {
   await Promise.all([loadStatus(), loadWatches(), loadAlerts()]);
@@ -284,7 +285,7 @@ async function refreshAll() {
     await loadSettings();
     await refreshAll();
   } catch (err) {
-    toast(`Lỗi: ${err.message}`);
+    toast(\`Lỗi: \${err.message}\`);
   }
   setInterval(loadStatus, 5000);
   setInterval(loadAlerts, 30000);
@@ -292,3 +293,4 @@ async function refreshAll() {
 </script>
 </body>
 </html>
+`;

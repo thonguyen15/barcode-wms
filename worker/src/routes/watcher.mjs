@@ -1,15 +1,9 @@
 import { Hono } from "hono";
 import { requireAuth, requireAdmin } from "../auth.mjs";
 import { getDb } from "../db.mjs";
+import { tgFetch } from "../telegram.mjs";
+import { WATCHER_PAGE_HTML } from "../watcher_page.mjs";
 import { mercariItemUrl, maskSecret, parseMercariSearchUrl } from "../watcher_utils.mjs";
-
-const SETTINGS_KEYS = [
-  "alert_chat_id",
-  "admin_user_ids",
-  "country_code",
-  "budget_per_minute",
-  "fresh_window_min",
-];
 
 const SETTINGS_DEFAULTS = {
   alert_chat_id: "",
@@ -22,6 +16,26 @@ const SETTINGS_DEFAULTS = {
 export const watcherRoutes = new Hono();
 
 watcherRoutes.use("*", requireAuth, requireAdmin);
+
+export const watcherPageRoute = new Hono();
+
+watcherPageRoute.use("*", requireAuth, requireAdmin);
+
+watcherPageRoute.get("/watcher.html", (c) =>
+  c.html(WATCHER_PAGE_HTML),
+);
+
+function isIntIn(v, min, max) {
+  return Number.isInteger(Number(v)) && Number(v) >= min && Number(v) <= max;
+}
+
+const SETTINGS_VALIDATORS = {
+  alertChatId: (v) => /^-?\d{3,}$/.test(v),
+  adminUserIds: (v) => /^\d+(,\d+)*$/.test(v),
+  countryCode: (v) => /^[A-Z]{2}$/.test(v),
+  budgetPerMinute: (v) => isIntIn(v, 1, 600),
+  freshWindowMin: (v) => isIntIn(v, 1, 120),
+};
 
 /** Read the settings rows into a keyed map of values. */
 async function readSettings(env) {
@@ -57,21 +71,27 @@ watcherRoutes.put("/watcher/settings", async (c) => {
   const values = await readSettings(c.env);
   const updates = [];
   if (typeof body.botToken === "string" && body.botToken) {
+    if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(body.botToken)) {
+      return c.json({ error: "botToken" }, 400);
+    }
     updates.push(["telegram_bot_token", body.botToken]);
   }
-  for (const key of SETTINGS_KEYS) {
-    const camel = key.replace(/_([a-z])/g, (_, ch) => ch.toUpperCase());
-    if (typeof body[camel] === "string") updates.push([key, body[camel]]);
+  for (const [camel, isValid] of Object.entries(SETTINGS_VALIDATORS)) {
+    const key = camel.replace(/[A-Z]/g, (ch) => `_${ch.toLowerCase()}`);
+    if (typeof body[camel] !== "string") continue;
+    if (!isValid(body[camel])) return c.json({ error: camel }, 400);
+    updates.push([key, body[camel]]);
   }
+  if (!updates.length) return c.json({ error: "Không có trường nào để cập nhật" }, 400);
   const now = new Date().toISOString();
-  for (const [key, value] of updates) {
-    await getDb(c.env).execute({
+  await getDb(c.env).batch(
+    updates.map(([key, value]) => ({
       sql: `INSERT INTO mercari_settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)
             ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at,
             updated_by = excluded.updated_by`,
       args: [key, value, now, c.get("user")],
-    });
-  }
+    })),
+  );
   const fresh = await readSettings(c.env);
   return c.json(settingsResponse(fresh));
 });
@@ -81,7 +101,7 @@ watcherRoutes.post("/watcher/settings/test", async (c) => {
   if (!values.botToken) return c.json({ ok: false, description: "Chưa cấu hình bot token" }, 400);
   if (!values.alert_chat_id) return c.json({ ok: false, description: "Chưa cấu hình alert chat id" }, 400);
   try {
-    const res = await fetch(`https://api.telegram.org/bot${values.botToken}/sendMessage`, {
+    const res = await tgFetch(c.env, `https://api.telegram.org/bot${values.botToken}/sendMessage`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ chat_id: values.alert_chat_id, text: "Test từ watcher UI" }),
@@ -127,6 +147,15 @@ watcherRoutes.get("/watcher/watches", async (c) => {
 watcherRoutes.post("/watcher/watches", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   if (typeof body.url !== "string" || !body.url) return c.json({ error: "Thiếu url" }, 400);
+  let parsed;
+  try {
+    parsed = new URL(body.url);
+  } catch {
+    return c.json({ error: "URL không hợp lệ" }, 400);
+  }
+  if (parsed.protocol !== "https:" || parsed.host !== "jp.mercari.com") {
+    return c.json({ error: "URL phải là https://jp.mercari.com/..." }, 400);
+  }
   let condition;
   try {
     condition = parseMercariSearchUrl(body.url);
@@ -152,13 +181,21 @@ watcherRoutes.patch("/watcher/watches/:id", async (c) => {
   const body = await c.req.json().catch(() => ({}));
   const sets = [];
   const args = [];
+  for (const key of Object.keys(body)) {
+    if (!["enabled", "intervalSec", "name"].includes(key)) {
+      return c.json({ error: `Trường không hợp lệ: ${key}` }, 400);
+    }
+  }
   if (typeof body.enabled === "boolean") {
     sets.push("enabled = ?");
     args.push(body.enabled ? 1 : 0);
   }
-  if (Number.isFinite(Number(body.intervalSec)) && body.intervalSec !== undefined && body.intervalSec !== null) {
+  if (body.intervalSec !== undefined && body.intervalSec !== null) {
+    if (!Number.isInteger(body.intervalSec) || body.intervalSec < 1 || body.intervalSec > 3600) {
+      return c.json({ error: "intervalSec phải là số nguyên từ 1 đến 3600" }, 400);
+    }
     sets.push("interval_sec = ?");
-    args.push(Number(body.intervalSec));
+    args.push(body.intervalSec);
   }
   if (typeof body.name === "string" && body.name) {
     sets.push("name = ?");
@@ -176,9 +213,12 @@ watcherRoutes.patch("/watcher/watches/:id", async (c) => {
 
 watcherRoutes.delete("/watcher/watches/:id", async (c) => {
   const id = c.req.param("id");
-  const rs = await getDb(c.env).execute({ sql: "DELETE FROM mercari_watches WHERE id = ?", args: [id] });
-  if (rs.rowsAffected === 0) return c.json({ error: "Không tìm thấy watch" }, 404);
-  await getDb(c.env).execute({ sql: "DELETE FROM mercari_seen_items WHERE watch_id = ?", args: [id] });
+  const rs = await getDb(c.env).execute({ sql: "SELECT id FROM mercari_watches WHERE id = ?", args: [id] });
+  if (!rs.rows.length) return c.json({ error: "Không tìm thấy watch" }, 404);
+  await getDb(c.env).batch([
+    { sql: "DELETE FROM mercari_watches WHERE id = ?", args: [id] },
+    { sql: "DELETE FROM mercari_seen_items WHERE watch_id = ?", args: [id] },
+  ]);
   return c.json({ ok: true });
 });
 
