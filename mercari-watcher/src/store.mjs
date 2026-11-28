@@ -13,6 +13,27 @@ export function createStore(client) {
       last_error TEXT,
       created_at TEXT NOT NULL
     )`);
+    await client.execute(`CREATE TABLE IF NOT EXISTS mercari_settings (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      updated_by TEXT
+    )`);
+    await client.execute(`CREATE TABLE IF NOT EXISTS mercari_alerts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      watch_id INTEGER NOT NULL,
+      item_id TEXT NOT NULL,
+      name TEXT,
+      price TEXT,
+      created_unix INTEGER,
+      sent_at TEXT NOT NULL,
+      mode TEXT
+    )`);
+    await client.execute(`CREATE TABLE IF NOT EXISTS mercari_status (
+      key TEXT PRIMARY KEY,
+      value_json TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )`);
     await client.execute(`CREATE TABLE IF NOT EXISTS mercari_seen_items (
       item_id TEXT PRIMARY KEY,
       watch_id INTEGER NOT NULL,
@@ -119,6 +140,51 @@ export function createStore(client) {
     return rs.rowsAffected;
   }
 
+  async function getSetting(key) {
+    const rs = await client.execute({ sql: "SELECT value FROM mercari_settings WHERE key = ?", args: [key] });
+    return rs.rows.length ? String(rs.rows[0].value) : null;
+  }
+
+  async function setSetting(key, value, by = null) {
+    const now = new Date().toISOString();
+    await client.execute(
+      `INSERT INTO mercari_settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at, updated_by = excluded.updated_by`,
+      [key, String(value), now, by],
+    );
+  }
+
+  async function getAllSettings() {
+    const rs = await client.execute("SELECT key, value FROM mercari_settings");
+    const out = {};
+    for (const row of rs.rows) out[String(row.key)] = String(row.value);
+    return out;
+  }
+
+  async function insertAlert({ watchId, itemId, name = null, price = null, createdUnix = null, sentAt, mode = null }) {
+    await client.execute(
+      `INSERT INTO mercari_alerts (watch_id, item_id, name, price, created_unix, sent_at, mode)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [watchId, itemId, name, price, createdUnix, sentAt, mode],
+    );
+  }
+
+  async function setStatus(key, valueJson) {
+    await client.execute(
+      `INSERT INTO mercari_status (key, value_json, updated_at) VALUES (?, ?, ?)
+       ON CONFLICT(key) DO UPDATE SET value_json = excluded.value_json, updated_at = excluded.updated_at`,
+      [key, valueJson, new Date().toISOString()],
+    );
+  }
+
+  async function pruneAlerts(beforeIso) {
+    const rs = await client.execute({
+      sql: "DELETE FROM mercari_alerts WHERE sent_at < ?",
+      args: [beforeIso],
+    });
+    return rs.rowsAffected;
+  }
+
   return {
     init,
     listWatches,
@@ -131,6 +197,12 @@ export function createStore(client) {
     deleteSeen,
     countSeenToday,
     pruneSeen,
+    getSetting,
+    setSetting,
+    getAllSettings,
+    insertAlert,
+    setStatus,
+    pruneAlerts,
   };
 }
 

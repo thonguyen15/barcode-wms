@@ -159,7 +159,7 @@ export function buildSearchBody(condition, { pageSize = 60 } = {}) {
   });
 }
 
-export async function searchMercari(condition, { pageSize = 60, fetchImpl = fetch } = {}) {
+export async function searchMercari(condition, { pageSize = 60, fetchImpl = fetch, countryCode } = {}) {
   rotateSessionIfNeeded();
   const nowMs = Date.now();
   const dpop = await buildDpopProof(SEARCH_URL, "POST", nowMs);
@@ -167,7 +167,7 @@ export async function searchMercari(condition, { pageSize = 60, fetchImpl = fetc
     "content-type": "application/json",
     accept: "application/json, text/plain, */*",
     "X-Platform": "web",
-    "X-Country-Code": process.env.MERCARI_COUNTRY_CODE || "VN",
+    "X-Country-Code": countryCode || process.env.MERCARI_COUNTRY_CODE || "VN",
     DPoP: dpop,
     origin: "https://jp.mercari.com",
     referer: "https://jp.mercari.com/",
