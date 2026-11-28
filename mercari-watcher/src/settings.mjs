@@ -5,12 +5,22 @@ export const SETTINGS_KEYS = [
   "country_code",
   "budget_per_minute",
   "fresh_window_min",
+  "poll_min_sec",
+  "poll_max_sec",
+  "quiet_hours_start",
+  "quiet_hours_end",
+  "quiet_timezone",
 ];
 
 const DEFAULTS = {
   country_code: "VN",
   budget_per_minute: "36",
   fresh_window_min: "15",
+  poll_min_sec: "5",
+  poll_max_sec: "15",
+  quiet_hours_start: "1",
+  quiet_hours_end: "6",
+  quiet_timezone: "Asia/Ho_Chi_Minh",
 };
 
 const ENV_SOURCES = {
@@ -20,6 +30,11 @@ const ENV_SOURCES = {
   country_code: ["MERCARI_COUNTRY_CODE"],
   budget_per_minute: [],
   fresh_window_min: [],
+  poll_min_sec: [],
+  poll_max_sec: [],
+  quiet_hours_start: [],
+  quiet_hours_end: [],
+  quiet_timezone: [],
 };
 
 export function createSettings({ store, env = process.env, log = () => {}, refreshMs = 10000 }) {
@@ -94,4 +109,21 @@ export function createSettings({ store, env = process.env, log = () => {}, refre
   }
 
   return { load, get, getAll, onChange, refresh, start };
+}
+
+/** Build the quiet-hours predicate from the schedule settings. */
+export function createQuietHoursChecker(get) {
+  return (ts) => {
+    const start = Number(get("quiet_hours_start"));
+    const end = Number(get("quiet_hours_end"));
+    if (!Number.isInteger(start) || !Number.isInteger(end) || start === end) return false;
+    let hour;
+    try {
+      hour = Number(new Intl.DateTimeFormat("en-GB", { hour: "numeric", hour12: false, timeZone: get("quiet_timezone") || "UTC" }).format(new Date(ts)));
+    } catch {
+      return false;
+    }
+    if (Number.isNaN(hour)) hour = 24;
+    return start < end ? hour >= start && hour < end : hour >= start || hour < end;
+  };
 }

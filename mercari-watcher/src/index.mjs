@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import { createTursoClient, createStore } from "./store.mjs";
 import { searchMercari, parseMercariSearchUrl } from "./mercari.mjs";
 import { createPoller } from "./poller.mjs";
-import { createSettings } from "./settings.mjs";
+import { createQuietHoursChecker, createSettings } from "./settings.mjs";
 import { createTelegram, sendAlertMessage } from "./telegram.mjs";
 import { handleCommand, buildAuthorizedChecker, formatAlert, alertKeyboard, escapeHtml } from "./commands.mjs";
 
@@ -91,6 +91,8 @@ async function alertError(watch, err) {
   }
 }
 
+const isInQuietHours = createQuietHoursChecker(settings.get);
+
 const poller = createPoller({
   store,
   searchMercari: searchMercariWithSettings,
@@ -100,6 +102,9 @@ const poller = createPoller({
   getBudgetPerMinute: () => Number(settings.get("budget_per_minute")) || 36,
   getFreshWindowMin: () => Number(settings.get("fresh_window_min")) || 15,
   getTelegramLastError: () => telegramLastError,
+  getPollMinSec: () => Number(settings.get("poll_min_sec")) || 5,
+  getPollMaxSec: () => Number(settings.get("poll_max_sec")) || 15,
+  isQuietHour: isInQuietHours,
 });
 
 async function seedEnvWatches() {

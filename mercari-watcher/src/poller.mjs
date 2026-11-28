@@ -1,10 +1,9 @@
-const DEFAULT_INTERVAL_MS = 5000;
-const JITTER_MS = 1000;
 const BACKOFF_CAP_MS = 300 * 1000;
 const EMPTY_PAUSE_MS = 15 * 60 * 1000;
 const EMPTY_PAUSE_THRESHOLD = 3;
 const ERROR_ALERT_COOLDOWN_MS = 30 * 60 * 1000;
 const MAX_ALERT_ITEMS = 5;
+const QUIET_RECHECK_MS = 60 * 1000;
 
 export function createPoller({
   store,
@@ -17,7 +16,15 @@ export function createPoller({
   getBudgetPerMinute = () => 36,
   getFreshWindowMin = () => 15,
   getTelegramLastError = () => null,
+  getPollMinSec = () => 5,
+  getPollMaxSec = () => 15,
+  isQuietHour = () => false,
 }) {
+  function baseInterval() {
+    const min = Math.max(1, Number(getPollMinSec()) || 5);
+    const max = Math.max(min, Number(getPollMaxSec()) || min);
+    return Math.round((min + random() * (max - min)) * 1000);
+  }
   const state = new Map();
   const requestTimes = [];
   let alertedTodayCount = 0;
@@ -63,7 +70,7 @@ export function createPoller({
     try {
       result = await searchMercari(condition);
     } catch (err) {
-      s.intervalMs = Math.min(Math.max(s.intervalMs * 2, DEFAULT_INTERVAL_MS * 2), BACKOFF_CAP_MS);
+      s.intervalMs = Math.min(Math.max(s.intervalMs * 2, baseInterval()), BACKOFF_CAP_MS);
       s.consecutiveEmpty = 0;
       await store.updateWatchRun(watch.id, {
         intervalSec: Math.round(s.intervalMs / 1000),
@@ -78,7 +85,7 @@ export function createPoller({
       }
       return;
     }
-    s.intervalMs = DEFAULT_INTERVAL_MS;
+    s.intervalMs = baseInterval();
     s.lastNumFound = result.numFound;
     s.baselineDone = true;
     const isBaseline = watch.lastRunAt === null;
@@ -208,17 +215,22 @@ export function createPoller({
     rollDailyCounter();
     const ts = now();
     const watches = await store.listWatches();
+    const quiet = isQuietHour(ts);
     for (const watch of watches) {
       if (!watch.enabled) continue;
       const s = getState(watch);
       if (ts < s.pausedUntil) continue;
       if (ts < s.nextRunAt) continue;
+      if (quiet) {
+        s.nextRunAt = ts + QUIET_RECHECK_MS;
+        continue;
+      }
       if (!underBudget(ts)) {
         s.nextRunAt = ts + 1000;
         continue;
       }
       await pollWatch(watch, ts);
-      s.nextRunAt = now() + s.intervalMs + Math.round(random() * JITTER_MS);
+      s.nextRunAt = now() + s.intervalMs;
     }
     await writeSnapshot();
   }
