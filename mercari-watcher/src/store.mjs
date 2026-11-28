@@ -42,6 +42,12 @@ export function createStore(client) {
       created_unix INTEGER NOT NULL,
       first_seen_at TEXT NOT NULL
     )`);
+    await client.execute(`CREATE TABLE IF NOT EXISTS mercari_subscribers (
+      chat_id TEXT PRIMARY KEY,
+      username TEXT,
+      first_name TEXT,
+      subscribed_at TEXT NOT NULL
+    )`);
   }
 
   async function listWatches() {
@@ -185,6 +191,25 @@ export function createStore(client) {
     return rs.rowsAffected;
   }
 
+  async function upsertSubscriber({ chatId, username, firstName }) {
+    await client.execute({
+      sql: `INSERT INTO mercari_subscribers (chat_id, username, first_name, subscribed_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(chat_id) DO UPDATE SET username = excluded.username, first_name = excluded.first_name`,
+      args: [String(chatId), username || null, firstName || null, new Date().toISOString()],
+    });
+  }
+
+  async function removeSubscriber(chatId) {
+    const rs = await client.execute({ sql: "DELETE FROM mercari_subscribers WHERE chat_id = ?", args: [String(chatId)] });
+    return rs.rowsAffected > 0;
+  }
+
+  async function listSubscribers() {
+    const rs = await client.execute("SELECT chat_id FROM mercari_subscribers ORDER BY subscribed_at");
+    return rs.rows.map((r) => String(r.chat_id));
+  }
+
   return {
     init,
     listWatches,
@@ -203,6 +228,9 @@ export function createStore(client) {
     insertAlert,
     setStatus,
     pruneAlerts,
+    upsertSubscriber,
+    removeSubscriber,
+    listSubscribers,
   };
 }
 
